@@ -12,7 +12,7 @@
  ************************************************************************************/
 
 
-#define VERSION_STR "6.14.2024 1.0"
+#define VERSION_STR "6.15.2025 d2.0"
 
 
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols
