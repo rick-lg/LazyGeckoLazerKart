@@ -17,22 +17,8 @@
 
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols
 #include <Arduino.h>
-#include <Adafruit_NeoPixel.h>
-
-#include "PinDefinitionsAndMore.h"
-#include <IRremote.hpp> // include the library
-
-//ESP32
-#define IR_RECEIVE_PIN_ESP    ( 4)
-#define LG_CAR_ENABLE_IO      (16)
-#define LG_CAR_HEALTH_BAR_PIN ( 5)
-#define LG_CAR_STATUS_IO      (19)
-
-
-//How many LEDS
-#define LG_CAR_HEALTH_BAR_COUNT   (20)
-
-
+#include <LazyGeckoLazerKart.h>
+#include <LazyGeckoLazerKart_LEDModes.h>
 
 //Uncomment one of these
 //#define LASER_ACTIVATED_BUBBLE_GUN (1)
@@ -60,6 +46,8 @@
 
 #elif LASER_ACTIVATED_GOKART_GUN
 
+  //#define OFF_BY_DEFAULT (1)
+  
   #define TYPE_OF_TARTGET_STR "GOKART GUN MODE"
   //Race 1 and 2 where at 10 health. 
   #define MAX_LIFE (15)
@@ -113,27 +101,43 @@ void LaserGun_EnableCar(){
 #ifndef OFF_BY_DEFAULT
   digitalWrite(LG_CAR_ENABLE_IO, HIGH);
   digitalWrite(LG_CAR_STATUS_IO, LOW);
+  
+  //LED ON when cart / grounds are connected
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW);
 #else
   digitalWrite(LG_CAR_ENABLE_IO, LOW);
   digitalWrite(LG_CAR_STATUS_IO, HIGH);
+
+  //LED ON when cart / grounds are connected
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
 #endif
+
+
 }
 
 void LaserGun_DisableCar(){
 #ifndef OFF_BY_DEFAULT
   digitalWrite(LG_CAR_ENABLE_IO, LOW);
   digitalWrite(LG_CAR_STATUS_IO, HIGH);
+
+  //LED ON when cart / grounds are connected
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
 #else
   digitalWrite(LG_CAR_ENABLE_IO, HIGH);
   digitalWrite(LG_CAR_STATUS_IO, LOW);
+  
+  //LED ON when cart / grounds are connected
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW);
 #endif
 }
 
 void pulseRed(uint8_t wait) {
+  
   for(int j=255; j>=0; j--) { // Ramp down from 255 to 0
     pixels.fill(pixels.Color(pixels.gamma8(j), 0, 0));
     pixels.show();
     delay(wait);
+    
   }  
   for(int j=0; j<256; j++) { // Ramp up from 0 to 255
     // Fill entire strip with white at gamma-corrected brightness level 'j':
@@ -199,8 +203,12 @@ void LaserGun_ReviveCar(){
   Serial.println("DAMAGE REENABLED... LOOKING FOR SHOTS");
 }
 
-int LaserGun_CarShot(uint8_t _damage){
+int LaserGun_CarShot(int8_t _damage){
   CAR_HEALTH -= _damage;
+
+  CAR_HEALTH = (CAR_HEALTH < 0)? 0: CAR_HEALTH;
+  CAR_HEALTH = (CAR_HEALTH > MAX_LIFE)? MAX_LIFE: CAR_HEALTH;
+
   Serial.print("CAR_HEALTH ");
   Serial.println(CAR_HEALTH);
   
@@ -229,8 +237,8 @@ void LaserGun_CheckMessage(int _data){
       break;
     case BLUE_GUN02: //Gun 3 has the same code for some reason
       break;
-    case BLUE_GUN04:  //Rocket Launcher
-      damg = MAX_LIFE / 4;  
+    case BLUE_GUN04:  //Rocket Launcher = Healing Launcher
+      damg = -1 * (MAX_LIFE / 4);  
       LaserGun_CarShot(damg);
       break;
     default:
@@ -295,7 +303,11 @@ void setup() {
     Serial.println("=================================");
 
     pinMode(LG_CAR_ENABLE_IO, OUTPUT);   
-    pinMode(LG_CAR_STATUS_IO, OUTPUT);   
+    pinMode(LG_CAR_STATUS_IO, OUTPUT);  
+
+    pinMode(LG_CAR_LED_MOSFET_EN_ST, OUTPUT);   
+    pinMode(LG_CAR_LED_IR_RX_ST, OUTPUT); 
+
 
 
     LaserGun_ReviveCar();
@@ -332,8 +344,11 @@ void loop() {
      * address is in command is in IrReceiver.decodedIRData.address
      * and up to 32 bit raw data in IrReceiver.decodedIRData.decodedRawData
      */
+     
+    digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
     if (IrReceiver.decode()) {
 
+      digitalWrite(LG_CAR_LED_IR_RX_ST, HIGH);
         /*
          * Print a summary of received data
          */
