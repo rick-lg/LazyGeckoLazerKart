@@ -18,7 +18,6 @@
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols
 #include <Arduino.h>
 #include <LazyGeckoLazerKart.h>
-#include <LazyGeckoLazerKart_LEDModes.h>
 
 //Uncomment one of these
 //#define LASER_ACTIVATED_BUBBLE_GUN (1)
@@ -103,13 +102,13 @@ void LaserGun_EnableCar(){
   digitalWrite(LG_CAR_STATUS_IO, LOW);
   
   //LED ON when cart / grounds are connected
-  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW);
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
 #else
   digitalWrite(LG_CAR_ENABLE_IO, LOW);
   digitalWrite(LG_CAR_STATUS_IO, HIGH);
 
   //LED ON when cart / grounds are connected
-  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW);
 #endif
 
 
@@ -121,13 +120,13 @@ void LaserGun_DisableCar(){
   digitalWrite(LG_CAR_STATUS_IO, HIGH);
 
   //LED ON when cart / grounds are connected
-  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW);
 #else
   digitalWrite(LG_CAR_ENABLE_IO, HIGH);
   digitalWrite(LG_CAR_STATUS_IO, LOW);
   
   //LED ON when cart / grounds are connected
-  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW);
+  digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
 #endif
 }
 
@@ -226,10 +225,14 @@ int LaserGun_CarShot(int8_t _damage){
 #define BLUE_GUN04 (0x008800)
 
 
+#define BLUE_GUN01_2025       (0x40078)
+#define BLUE_GUN_ROCKET_2025  (0x24078)
+
 int damg = 0;
 void LaserGun_CheckMessage(int _data){
 
   switch(_data){
+    case BLUE_GUN01_2025:
     case BLUE_GUN01:    
       Serial.println("Shots Fired from BLUE_GUN01");
       damg = 1;
@@ -237,6 +240,7 @@ void LaserGun_CheckMessage(int _data){
       break;
     case BLUE_GUN02: //Gun 3 has the same code for some reason
       break;
+    case BLUE_GUN_ROCKET_2025:
     case BLUE_GUN04:  //Rocket Launcher = Healing Launcher
       damg = -1 * (MAX_LIFE / 4);  
       LaserGun_CarShot(damg);
@@ -308,12 +312,26 @@ void setup() {
     pinMode(LG_CAR_LED_MOSFET_EN_ST, OUTPUT);   
     pinMode(LG_CAR_LED_IR_RX_ST, OUTPUT); 
 
+    digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
+    digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW);
 
+    delay (1000);
+    digitalWrite(LG_CAR_LED_IR_RX_ST, HIGH);
+    delay (1000);
+    digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
+    delay (1000);
 
+    Serial.println("CHECKING: Disabling Car for 5 seconds...");
+    LaserGun_DisableCar();
+    delay (5000);
+
+    Serial.println("CHECKING: Enabling Car...");
+    digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
     LaserGun_ReviveCar();
     
     // Start the receiver and if not 3. parameter specified, take LED_BUILTIN pin from the internal boards definition as default feedback LED
-    IrReceiver.begin(IR_RECEIVE_PIN_ESP, ENABLE_LED_FEEDBACK);
+    //IrReceiver.begin(IR_RECEIVE_PIN_ESP, ENABLE_LED_FEEDBACK);
+    IrReceiver.begin(IR_RECEIVE_PIN_ESP, false);
 
     Serial.print(F("Ready to receive IR signals of protocols: "));
     printActiveIRProtocols(&Serial);
