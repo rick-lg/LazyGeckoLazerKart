@@ -10,8 +10,10 @@
  *  This file is part of Arduino-IRremote https://github.com/Arduino-IRremote/Arduino-IRremote.
  *
  ************************************************************************************/
+ //Sketchbook location under preferences c:\GitLG\LazyGeckoLazerKart
 
 
+//    SELECT "ESP32 DEV MODULE" AS THE BOARD
 #define VERSION_STR "6.15.2025 d2.0"
 
 
