@@ -21,6 +21,126 @@
 #include <Arduino.h>
 #include <LazyGeckoLazerKart.h>
 
+
+//OTA=========================
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include <NetworkUdp.h>
+#include <Update.h>
+//OTA=========================
+
+WebServer server(80);
+TaskHandle_t serverTaskHandle;
+
+///I want SSID to build off of the MAC addr of the device
+//Handled lower
+//const char *ssid = "LG:TG:XX:XX:XX:XX:XX";
+const char *password = "boutablast";
+bool isUpdating = false;
+void handleRoot() {
+  if (server.method() == HTTP_POST) {
+    HTTPUpload& upload = server.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      isUpdating = true;
+      digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW); // Start with LED off
+      Serial.printf("Update Start: %s\n", upload.filename.c_str());
+      if (!Update.begin()) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+        Update.printError(Serial);
+      }
+    } else if (upload.status == UPLOAD_FILE_END) {
+      isUpdating = false; // Stop blinking
+      if (Update.end(true)) {
+        Serial.println("Update Success. Rebooting...");
+      } else {
+        Update.printError(Serial);
+      }
+    }
+    delay(1000);
+    ESP.restart();
+  } else {
+server.send(200, "text/html", R"rawliteral(
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <title>ESP32 OTA Update</title>
+    <style>
+      body { font-family: Arial; padding: 20px; }
+      progress { width: 100%; height: 30px; }
+    </style>
+  </head>
+  <body>
+    <h2>ESP32 OTA Update</h2>
+    <a href="/status"> View Status Page</a>
+    <form id="uploadForm">
+      <input type="file" id="file" name="update" required><br><br>
+      <input type="submit" value="Upload">
+    </form>
+    <br>
+    <progress id="progressBar" value="0" max="100"></progress>
+    <p id="status"></p>
+
+    <script>
+      const form = document.getElementById('uploadForm');
+      const fileInput = document.getElementById('file');
+      const progressBar = document.getElementById('progressBar');
+      const statusText = document.getElementById('status');
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/", true);
+
+        xhr.upload.onprogress = function (e) {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            progressBar.value = percent;
+            statusText.textContent = `Uploading: ${percent}%`;
+          }
+        };
+
+        xhr.onload = function () {
+          if (xhr.status == 200) {
+            statusText.textContent = "Upload complete. Rebooting ESP32...";
+          } else {
+            statusText.textContent = "Upload failed.";
+          }
+        };
+
+        const formData = new FormData();
+        formData.append("update", file);
+        xhr.send(formData);
+      });
+    </script>
+  </body>
+  </html>
+)rawliteral");
+  }
+}
+
+// Task to handle HTTP requests on Core 0
+void serverTask(void *parameter) {
+  while (true) {
+    server.handleClient();
+    vTaskDelay(1); // prevent WDT reset
+  }
+}
+
+// Optional: separate handler for upload stream (though we reused root)
+void handleUpload() {
+  HTTPUpload &upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START || upload.status == UPLOAD_FILE_WRITE || upload.status == UPLOAD_FILE_END) {
+    handleRoot();
+  }
+}
+
 //Uncomment one of these
 //#define LASER_ACTIVATED_BUBBLE_GUN (1)
 //#define LASER_ACTIVATED_EAGLE_GUN  (1)
@@ -331,6 +451,72 @@ void setup() {
     digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
     LaserGun_ReviveCar();
     
+    //Setup Wifi for OTA in AP Mode
+    WiFi.mode(WIFI_AP);                  // Important!
+    WiFi.softAP("t", "123");     // Start AP
+    // Get the MAC address and format it
+    String mac = WiFi.softAPmacAddress();
+    Serial.print("MACADDR: ");
+    Serial.println(mac);
+
+    String ssid = "LG:TG:" + mac;
+
+    Serial.print("SSID Set to : ");
+    Serial.println(ssid);
+
+    WiFi.softAP(ssid.c_str(), password);
+    Serial.print("AP IP address: ");
+    Serial.println(WiFi.softAPIP()); //Is this constant?
+
+    // Start Web Server
+     // Route and OTA upload handler
+    server.on("/", HTTP_ANY, handleRoot, handleUpload);
+
+    // Add /status route handler
+    server.on("/status", HTTP_GET, []() {
+
+
+int CAR_HEALTH = MAX_LIFE;
+    bool default_output = false;
+#ifdef OFF_BY_DEFAULT
+  default_output = true;
+#endif
+
+      String html = "<!DOCTYPE html><html><head><title>ESP32 Status</title></head><body>";
+      html += "<a href=""""/""""> View OTA Page</a>";
+      html += "<h1>Status</h1><ul>";
+      html += "<li>TYPE_OF_TARTGET_STR: " + String(TYPE_OF_TARTGET_STR) + "</li>";
+      html += "<li>OFF_BY_DEFAULT: " + String(default_output) + "</li>";
+      html += "<li>MAX_LIFE: "  + String(MAX_LIFE) + "</li>";
+      html += "<li>DEATH_MS: "  + String(DEATH_MS) + "</li>";
+      html += "<li>JESUS_MS : " + String(JESUS_MS) + "</li>";
+      html += "<li>CAR_HEALTH : " + String(CAR_HEALTH) + "</li>";
+      html += "</ul>";
+      html += "<h2>Outputs</h2>";
+      html += "<p>LG_CAR_ENABLE_IO = "        + String(digitalRead(LG_CAR_ENABLE_IO)) + "</p>";
+      html += "<p>LG_CAR_STATUS_IO = "        + String(digitalRead(LG_CAR_STATUS_IO)) + "</p>";
+      html += "<p>LG_CAR_LED_MOSFET_EN_ST = " + String(digitalRead(LG_CAR_LED_MOSFET_EN_ST)) + "</p>";
+      html += "<p>LG_CAR_LED_IR_RX_ST = "     + String(digitalRead(LG_CAR_LED_IR_RX_ST)) + "</p>";
+      html += "</body></html>";
+
+      server.send(200, "text/html", html);
+    });
+    
+    server.begin();
+
+    Serial.println("Web server started");
+    // Start server handling on Core 0
+    xTaskCreatePinnedToCore(
+        serverTask,        // Function
+        "WebServerTask",   // Name
+        4096,              // Stack size
+        NULL,              // Params
+        1,                 // Priority
+        &serverTaskHandle, // Handle
+        0                  // Core 0
+      );
+    
+
     // Start the receiver and if not 3. parameter specified, take LED_BUILTIN pin from the internal boards definition as default feedback LED
     //IrReceiver.begin(IR_RECEIVE_PIN_ESP, ENABLE_LED_FEEDBACK);
     IrReceiver.begin(IR_RECEIVE_PIN_ESP, false);
@@ -355,6 +541,10 @@ void setup() {
    
     
 }
+
+
+unsigned long lastBlinkTime = 0;
+bool ledState = false;
 void loop() {
     /*
      * Check if received data is available and if yes, try to decode it.
@@ -365,30 +555,41 @@ void loop() {
      * and up to 32 bit raw data in IrReceiver.decodedIRData.decodedRawData
      */
      
-    digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
-    if (IrReceiver.decode()) {
+    //server.handleClient();
 
-      digitalWrite(LG_CAR_LED_IR_RX_ST, HIGH);
-        /*
-         * Print a summary of received data
-         */
-
-        if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
-            Serial.println(F("Received noise or an unknown (or not yet enabled) protocol"));
-            // We have an unknown protocol here, print extended info
-            IrReceiver.printIRResultRawFormatted(&Serial, true);
-            IrReceiver.resume(); // Do it here, to preserve raw data for printing with printIRResultRawFormatted()
-        } else {
-            IrReceiver.resume(); // Early enable receiving of the next IR frame
-            IrReceiver.printIRResultShort(&Serial);
-            IrReceiver.printIRSendUsage(&Serial);
-        }
-        Serial.println();
- #ifdef DEBUG_YALL
- #endif
-         
-         Serial.println(IrReceiver.decodedIRData.decodedRawData, HEX);
-         LaserGun_CheckMessage(IrReceiver.decodedIRData.decodedRawData);
-         
+  if (isUpdating) {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastBlinkTime >= 250) { // Blink interval
+      lastBlinkTime = currentMillis;
+      ledState = !ledState;
+      digitalWrite(LG_CAR_LED_MOSFET_EN_ST, ledState);
     }
+  }else{
+      digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
+      if (IrReceiver.decode()) {
+
+        digitalWrite(LG_CAR_LED_IR_RX_ST, HIGH);
+          /*
+          * Print a summary of received data
+          */
+
+          if (IrReceiver.decodedIRData.protocol == UNKNOWN) {
+              Serial.println(F("Received noise or an unknown (or not yet enabled) protocol"));
+              // We have an unknown protocol here, print extended info
+              IrReceiver.printIRResultRawFormatted(&Serial, true);
+              IrReceiver.resume(); // Do it here, to preserve raw data for printing with printIRResultRawFormatted()
+          } else {
+              IrReceiver.resume(); // Early enable receiving of the next IR frame
+              IrReceiver.printIRResultShort(&Serial);
+              IrReceiver.printIRSendUsage(&Serial);
+          }
+          Serial.println();
+  #ifdef DEBUG_YALL
+  #endif
+          
+          Serial.println(IrReceiver.decodedIRData.decodedRawData, HEX);
+          LaserGun_CheckMessage(IrReceiver.decodedIRData.decodedRawData);
+          
+      }
+  }
 }
