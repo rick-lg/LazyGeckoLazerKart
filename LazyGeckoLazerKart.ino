@@ -14,7 +14,7 @@
 
 
 //    SELECT "ESP32 DEV MODULE" AS THE BOARD
-#define VERSION_STR "6.15.2025 d2.0"
+#define VERSION_STR "7.03.2025 d2.0 DEMO"
 
 
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols
@@ -25,19 +25,39 @@
 //OTA=========================
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <NetworkUdp.h>
 #include <Update.h>
 //OTA=========================
 
+const byte DNS_PORT = 53;
+DNSServer dnsServer;
+
 WebServer server(80);
 TaskHandle_t serverTaskHandle;
+
+IPAddress apIP(192, 168, 4, 1);
+
+String getHostName() {
+  //iF WE WANT UNIQUE CAUSE EVERYONE IS ON THE SAME NETWROK
+ /* uint8_t mac[6];
+  WiFi.softAPmacAddress(mac);
+  char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return "LG:TG:" + String(macStr) +".local";*/
+  return "lg-tag.local";
+}
 
 ///I want SSID to build off of the MAC addr of the device
 //Handled lower
 //const char *ssid = "LG:TG:XX:XX:XX:XX:XX";
 const char *password = "boutablast";
 bool isUpdating = false;
+
+
+
 void handleRoot() {
   if (server.method() == HTTP_POST) {
     HTTPUpload& upload = server.upload();
@@ -45,89 +65,292 @@ void handleRoot() {
       isUpdating = true;
       digitalWrite(LG_CAR_LED_MOSFET_EN_ST, LOW); // Start with LED off
       Serial.printf("Update Start: %s\n", upload.filename.c_str());
+
+
       if (!Update.begin()) {
         Update.printError(Serial);
       }
     } else if (upload.status == UPLOAD_FILE_WRITE) {
+
+      Serial.printf("Update UPLOAD_FILE_WRITE: %s\n", upload.filename.c_str());
       if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
         Update.printError(Serial);
       }
     } else if (upload.status == UPLOAD_FILE_END) {
       isUpdating = false; // Stop blinking
+      //Put something on the website when we are done
       if (Update.end(true)) {
         Serial.println("Update Success. Rebooting...");
       } else {
         Update.printError(Serial);
       }
-    }
-    delay(1000);
+    delay(3000);
     ESP.restart();
+    }
   } else {
-server.send(200, "text/html", R"rawliteral(
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <title>ESP32 OTA Update</title>
-    <style>
-      body { font-family: Arial; padding: 20px; }
-      progress { width: 100%; height: 30px; }
-    </style>
-  </head>
-  <body>
-    <h2>ESP32 OTA Update</h2>
-    <a href="/status"> View Status Page</a>
-    <form id="uploadForm">
-      <input type="file" id="file" name="update" required><br><br>
-      <input type="submit" value="Upload">
-    </form>
-    <br>
-    <progress id="progressBar" value="0" max="100"></progress>
-    <p id="status"></p>
+String html = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LazyGecko LG-TAG OTA Updater</title>
+  <style>
+    :root {
+      --bg: #f4f4f4;
+      --fg: #222;
+      --accent: #228B22;
+      --card-bg: #ffffff;
+      --border: #ccc;
+      --font: 'Courier New', monospace;
+    }
 
-    <script>
-      const form = document.getElementById('uploadForm');
-      const fileInput = document.getElementById('file');
-      const progressBar = document.getElementById('progressBar');
-      const statusText = document.getElementById('status');
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--fg);
+    }
 
-      form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        const file = fileInput.files[0];
-        if (!file) return;
+    h2 {
+      text-align: center;
+      font-size: 1.6rem;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    h3 {
+      text-align: center;
+      font-size: 1.0rem;
+      letter-spacing: 1px;
+    }
 
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/", true);
+    a.status {
+      display: block;
+      text-align: center;
+      color: var(--accent);
+      font-weight: bold;
+      text-decoration: none;
+      margin-bottom: 25px;
+    }
 
-        xhr.upload.onprogress = function (e) {
-          if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            progressBar.value = percent;
-            statusText.textContent = `Uploading: ${percent}%`;
-          }
-        };
+    a.status:hover {
+      text-decoration: underline;
+    }
 
-        xhr.onload = function () {
-          if (xhr.status == 200) {
-            statusText.textContent = "Upload complete. Rebooting ESP32...";
-          } else {
-            statusText.textContent = "Upload failed.";
-          }
-        };
+    form {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 20px;
+      max-width: 400px;
+      margin: 0 auto;
+      border-radius: 8px;
+      box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.05);
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
 
-        const formData = new FormData();
-        formData.append("update", file);
-        xhr.send(formData);
-      });
-    </script>
-  </body>
-  </html>
-)rawliteral");
+    input[type="file"] {
+      padding: 8px;
+      font-family: var(--font);
+    }
+
+    input[type="submit"] {
+      background: var(--accent);
+      border: none;
+      padding: 10px;
+      font-weight: bold;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+
+    input[type="submit"]:hover {
+      background: #e0269f;
+    }
+
+    progress {
+      width: 100%;
+      height: 20px;
+      margin-top: 20px;
+    }
+
+    #status {
+      text-align: center;
+      margin-top: 10px;
+      min-height: 1.2em;
+      font-weight: bold;
+    }
+    /* Style submit button same as label */
+    input[type="submit"] {
+      background: var(--accent);
+      border: none;
+      padding: 15px;
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      max-width: 400px;
+      box-sizing: border-box;
+      box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+      transition: background 0.2s ease;
+    }
+
+    #file {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    }
+    
+    .file-label {
+    display: block;
+    background-color: var(--accent);
+    color: white;
+    padding: 15px;
+    font-size: 1.4rem;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    user-select: none;
+    width: 100%;
+    max-width: 400px;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+    transition: background-color 0.2s ease;
+    }
+    
+    .button-link {
+    display: block;
+    background-color: var(--accent);
+    color: white;
+    padding: 15px;
+    font-size: 1.4rem;
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    text-align: center;
+    user-select: none;
+    width: 100%;
+    max-width: 400px;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+    box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+    transition: background-color 0.2s ease;
+    text-decoration: none;
+    }
+    
+    
+    
+    
+    
+    .file-label:hover {
+    background-color: #1e6f1e;
+    }
+    
+    .file-label, .button-link, 
+    input[type="submit"] {
+      font-family: Arial, sans-serif;  or your chosen font */
+      font-weight: bold;
+      font-size: 1.4rem;
+      line-height: 1.2; /* keep consistent */
+    }
+    @media (max-width: 480px) {
+      form {
+        padding: 15px;
+        width: 100%;
+      }
+
+      body {
+        padding: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <h2>LG Tag OTA Update</h2>
+  <h3>[%VERSION_STR%]</h3>
+  <h3>[%MAC_ADDR_STR%]</h3>
+ 
+  <form id="uploadForm">
+      
+      <a href="/status" class="button-link">Status Page</a>
+      
+    <label for="file" class="file-label">Select Bin File</label>
+    <input type="file" id="file" name="update" accept=".bin" required />
+    <input type="submit" value="Upload Firmware" />
+  </form>
+
+  <progress id="progressBar" value="0" max="100"></progress>
+  <p id="status"></p>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const fileInput = document.getElementById('file');
+    const progressBar = document.getElementById('progressBar');
+    const statusText = document.getElementById('status');
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/", true);
+
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 100);
+          progressBar.value = percent;
+          statusText.textContent = `Uploading: ${percent}%`;
+        }
+      };
+
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          statusText.textContent = "✅ Upload complete. Rebooting ESP32...";
+        } else {
+          statusText.textContent = "❌ Upload failed.";
+        }
+      };
+
+      const formData = new FormData();
+      formData.append("update", file);
+      xhr.send(formData);
+    });
+  </script>
+</body>
+</html>
+
+)rawliteral";
+
+
+html.replace("%VERSION_STR%", VERSION_STR);
+html.replace("%MAC_ADDR_STR%", String(WiFi.softAPmacAddress()));
+
+
+
+server.send(200, "text/html", html);
+
+
+
+
   }
 }
 
 // Task to handle HTTP requests on Core 0
 void serverTask(void *parameter) {
   while (true) {
+    dnsServer.processNextRequest();                       //NEW
     server.handleClient();
     vTaskDelay(1); // prevent WDT reset
   }
@@ -465,8 +688,23 @@ void setup() {
     Serial.println(ssid);
 
     WiFi.softAP(ssid.c_str(), password);
+    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
+
     Serial.print("AP IP address: ");
     Serial.println(WiFi.softAPIP()); //Is this constant?
+
+    // Build hostname and start mDNS
+    String hostname = getHostName();
+    Serial.print("Hostname: ");
+    Serial.println(hostname);
+
+    if (!MDNS.begin(hostname.c_str())) {
+      Serial.println("Error setting up MDNS responder!");
+    } else {
+      Serial.println("mDNS responder started");
+    }
+
+    dnsServer.start(DNS_PORT, "*", apIP);  // catch-all DNS
 
     // Start Web Server
      // Route and OTA upload handler
@@ -481,10 +719,90 @@ int CAR_HEALTH = MAX_LIFE;
 #ifdef OFF_BY_DEFAULT
   default_output = true;
 #endif
+String html = R"rawliteral(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ESP32 Status</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f9f9f9;
+      color: #222;
+      margin: 20px;
+      max-width: 600px;
+    }
+    a {
+      color: #228B22;
+      text-decoration: none;
+      font-weight: bold;
+      margin-bottom: 20px;
+      display: inline-block;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    h1, h2 {
+      border-bottom: 2px solid #228B22;
+      padding-bottom: 5px;
+    }
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+    li {
+      background: #fff;
+      margin-bottom: 8px;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    p {
+      background: #fff;
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      margin: 6px 0;
+    }
+  </style>
+</head>
+<body>
+  <a href="/">&#8592; View OTA Page</a>
+  <h1>Status</h1>
+  <ul>
+)rawliteral";
 
+html += "<li>MAC: " + String(WiFi.softAPmacAddress()) + "</li>";
+html += "<li>VERSION_STR: " + String(VERSION_STR) + "</li>";
+html += "<li>TYPE_OF_TARTGET_STR: " + String(TYPE_OF_TARTGET_STR) + "</li>";
+html += "<li>OFF_BY_DEFAULT: " + String(default_output) + "</li>";
+html += "<li>MAX_LIFE: "  + String(MAX_LIFE) + "</li>";
+html += "<li>DEATH_MS: "  + String(DEATH_MS) + "</li>";
+html += "<li>JESUS_MS: " + String(JESUS_MS) + "</li>";
+html += "<li>CAR_HEALTH: " + String(CAR_HEALTH) + "</li>";
+
+html += R"rawliteral(
+  </ul>
+  <h2>Outputs</h2>
+)rawliteral";
+
+html += "<p>LG_CAR_ENABLE_IO = "        + String(digitalRead(LG_CAR_ENABLE_IO)) + "</p>";
+html += "<p>LG_CAR_STATUS_IO = "        + String(digitalRead(LG_CAR_STATUS_IO)) + "</p>";
+html += "<p>LG_CAR_LED_MOSFET_EN_ST = " + String(digitalRead(LG_CAR_LED_MOSFET_EN_ST)) + "</p>";
+html += "<p>LG_CAR_LED_IR_RX_ST = "     + String(digitalRead(LG_CAR_LED_IR_RX_ST)) + "</p>";
+
+html += R"rawliteral(
+</body>
+</html>
+)rawliteral";
+
+
+/*
       String html = "<!DOCTYPE html><html><head><title>ESP32 Status</title></head><body>";
       html += "<a href=""""/""""> View OTA Page</a>";
       html += "<h1>Status</h1><ul>";
+      html += "<li>VERSION_STR: " + String(VERSION_STR) + "</li>";
       html += "<li>TYPE_OF_TARTGET_STR: " + String(TYPE_OF_TARTGET_STR) + "</li>";
       html += "<li>OFF_BY_DEFAULT: " + String(default_output) + "</li>";
       html += "<li>MAX_LIFE: "  + String(MAX_LIFE) + "</li>";
@@ -498,7 +816,7 @@ int CAR_HEALTH = MAX_LIFE;
       html += "<p>LG_CAR_LED_MOSFET_EN_ST = " + String(digitalRead(LG_CAR_LED_MOSFET_EN_ST)) + "</p>";
       html += "<p>LG_CAR_LED_IR_RX_ST = "     + String(digitalRead(LG_CAR_LED_IR_RX_ST)) + "</p>";
       html += "</body></html>";
-
+*/
       server.send(200, "text/html", html);
     });
     
