@@ -57,7 +57,6 @@ const char *password = "boutablast";
 bool isUpdating = false;
 
 
-
 void handleRoot() {
   if (server.method() == HTTP_POST) {
     HTTPUpload& upload = server.upload();
@@ -340,7 +339,6 @@ html.replace("%MAC_ADDR_STR%", String(WiFi.softAPmacAddress()));
 
 
 server.send(200, "text/html", html);
-
 
 
 
@@ -883,6 +881,15 @@ void loop() {
       digitalWrite(LG_CAR_LED_MOSFET_EN_ST, ledState);
     }
   }else{
+
+    //DEBUGGING THE WIFI COLLISION
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastBlinkTime >= 1000) { // Blink interval
+      lastBlinkTime = currentMillis;
+      ledState = !ledState;
+     // LaserGun_CarShot(5);
+    }
+
       digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
       if (IrReceiver.decode()) {
 
