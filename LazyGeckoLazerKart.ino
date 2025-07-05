@@ -345,6 +345,8 @@ server.send(200, "text/html", html);
   }
 }
 
+
+
 // Task to handle HTTP requests on Core 0
 void serverTask(void *parameter) {
   while (true) {
@@ -709,10 +711,50 @@ void setup() {
     server.on("/", HTTP_ANY, handleRoot, handleUpload);
 
     // Add /status route handler
-    server.on("/status", HTTP_GET, []() {
+    server.on("/status", HTTP_GET, handleStatus);
+    
+    server.begin();
+
+    Serial.println("Web server started");
+    // Start server handling on Core 0
+    xTaskCreatePinnedToCore(
+        serverTask,        // Function
+        "WebServerTask",   // Name
+        4096,              // Stack size
+        NULL,              // Params
+        1,                 // Priority
+        &serverTaskHandle, // Handle
+        0                  // Core 0
+      );
+    
+
+    // Start the receiver and if not 3. parameter specified, take LED_BUILTIN pin from the internal boards definition as default feedback LED
+    //IrReceiver.begin(IR_RECEIVE_PIN_ESP, ENABLE_LED_FEEDBACK);
+    IrReceiver.begin(IR_RECEIVE_PIN_ESP, false);
+
+    Serial.print(F("Ready to receive IR signals of protocols: "));
+    printActiveIRProtocols(&Serial);
+    Serial.println(F("at pin " STR(IR_RECEIVE_PIN_ESP)));
+
+    
+    pixels.begin();
+    pixels.show(); 
 
 
-int CAR_HEALTH = MAX_LIFE;
+#ifndef OFF_BY_DEFAULT
+    Serial.println(VERSION_STR);
+    Serial.println(">>OUTPUT ENABLED BY DEFAULT<<");
+#else
+    Serial.println(VERSION_STR);
+    Serial.println("<<OUTPUT DISABLED BY DEFAULT>>");
+#endif
+   // LaserGun_KillLED_Sequence(DEATH_MS);
+   
+    
+}
+
+void handleStatus() {
+ 
     bool default_output = false;
 #ifdef OFF_BY_DEFAULT
   default_output = true;
@@ -796,69 +838,9 @@ html += R"rawliteral(
 )rawliteral";
 
 
-/*
-      String html = "<!DOCTYPE html><html><head><title>ESP32 Status</title></head><body>";
-      html += "<a href=""""/""""> View OTA Page</a>";
-      html += "<h1>Status</h1><ul>";
-      html += "<li>VERSION_STR: " + String(VERSION_STR) + "</li>";
-      html += "<li>TYPE_OF_TARTGET_STR: " + String(TYPE_OF_TARTGET_STR) + "</li>";
-      html += "<li>OFF_BY_DEFAULT: " + String(default_output) + "</li>";
-      html += "<li>MAX_LIFE: "  + String(MAX_LIFE) + "</li>";
-      html += "<li>DEATH_MS: "  + String(DEATH_MS) + "</li>";
-      html += "<li>JESUS_MS : " + String(JESUS_MS) + "</li>";
-      html += "<li>CAR_HEALTH : " + String(CAR_HEALTH) + "</li>";
-      html += "</ul>";
-      html += "<h2>Outputs</h2>";
-      html += "<p>LG_CAR_ENABLE_IO = "        + String(digitalRead(LG_CAR_ENABLE_IO)) + "</p>";
-      html += "<p>LG_CAR_STATUS_IO = "        + String(digitalRead(LG_CAR_STATUS_IO)) + "</p>";
-      html += "<p>LG_CAR_LED_MOSFET_EN_ST = " + String(digitalRead(LG_CAR_LED_MOSFET_EN_ST)) + "</p>";
-      html += "<p>LG_CAR_LED_IR_RX_ST = "     + String(digitalRead(LG_CAR_LED_IR_RX_ST)) + "</p>";
-      html += "</body></html>";
-*/
       server.send(200, "text/html", html);
-    });
-    
-    server.begin();
-
-    Serial.println("Web server started");
-    // Start server handling on Core 0
-    xTaskCreatePinnedToCore(
-        serverTask,        // Function
-        "WebServerTask",   // Name
-        4096,              // Stack size
-        NULL,              // Params
-        1,                 // Priority
-        &serverTaskHandle, // Handle
-        0                  // Core 0
-      );
-    
-
-    // Start the receiver and if not 3. parameter specified, take LED_BUILTIN pin from the internal boards definition as default feedback LED
-    //IrReceiver.begin(IR_RECEIVE_PIN_ESP, ENABLE_LED_FEEDBACK);
-    IrReceiver.begin(IR_RECEIVE_PIN_ESP, false);
-
-    Serial.print(F("Ready to receive IR signals of protocols: "));
-    printActiveIRProtocols(&Serial);
-    Serial.println(F("at pin " STR(IR_RECEIVE_PIN_ESP)));
-
-    
-    pixels.begin();
-    pixels.show(); 
-
-
-#ifndef OFF_BY_DEFAULT
-    Serial.println(VERSION_STR);
-    Serial.println(">>OUTPUT ENABLED BY DEFAULT<<");
-#else
-    Serial.println(VERSION_STR);
-    Serial.println("<<OUTPUT DISABLED BY DEFAULT>>");
-#endif
-   // LaserGun_KillLED_Sequence(DEATH_MS);
-   
     
 }
-
-
 unsigned long lastBlinkTime = 0;
 bool ledState = false;
 void loop() {
