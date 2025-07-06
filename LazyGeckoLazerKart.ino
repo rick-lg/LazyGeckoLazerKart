@@ -365,12 +365,45 @@ void handleUpload() {
 }
 
 //Uncomment one of these
+//#define LASER_ACTIVATED_ADLIAS_BLOWER_GUN (1)
+//#define LASER_ACTIVATED_FOG_GUN (1)
+#define LASER_ACTIVATED_WATER_GUN (1)
 //#define LASER_ACTIVATED_BUBBLE_GUN (1)
 //#define LASER_ACTIVATED_EAGLE_GUN  (1)
-#define LASER_ACTIVATED_GOKART_GUN (1)
+//#define LASER_ACTIVATED_GOKART_GUN (1)
 
+ 
+#ifdef LASER_ACTIVATED_ADLIAS_BLOWER_GUN
 
-#ifdef LASER_ACTIVATED_BUBBLE_GUN
+  #define OFF_BY_DEFAULT (1)
+  #define TYPE_OF_TARTGET_STR "ADLIAS_BLOWER MODE"
+  #define MAX_LIFE (10)
+  //Time to keep car dead
+  #define DEATH_MS (5000)
+  //Time car resist guns
+  #define JESUS_MS (5000)
+
+#elif LASER_ACTIVATED_FOG_GUN
+
+  #define OFF_BY_DEFAULT (1)
+  #define TYPE_OF_TARTGET_STR "FOG MACHINE MODE"
+  #define MAX_LIFE (10)
+  //Time to keep car dead
+  #define DEATH_MS (15000)
+  //Time car resist guns
+  #define JESUS_MS (5000)
+
+#elif LASER_ACTIVATED_WATER_GUN
+
+  #define OFF_BY_DEFAULT (1)
+  #define TYPE_OF_TARTGET_STR "WATER GUN MODE"
+  #define MAX_LIFE (10)
+  //Time to keep car dead
+  #define DEATH_MS (1500)
+  //Time car resist guns
+  #define JESUS_MS (5000)
+
+#elif LASER_ACTIVATED_BUBBLE_GUN
   #define OFF_BY_DEFAULT (1)
   #define TYPE_OF_TARTGET_STR "BUBBLE GUN MODE"
   #define MAX_LIFE (10)
@@ -666,9 +699,6 @@ void setup() {
     digitalWrite(LG_CAR_LED_MOSFET_EN_ST, HIGH);
     delay (1000);
 
-    Serial.println("CHECKING: Disabling Car for 5 seconds...");
-    LaserGun_DisableCar();
-    delay (5000);
 
     Serial.println("CHECKING: Enabling Car...");
     digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
