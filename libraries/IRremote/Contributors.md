@@ -31,5 +31,8 @@ These are the active contributors of this project that you may contact if there 
 - [slott](https://stackoverflow.com/users/11680056/sklott) Seeduino print(unsigned long long...) support.
 - [Joe Ostrander](https://github.com/joeostrander) Added support for attiny1614.
 - [Buzzerb](https://github.com/Buzzerb) Added Extended NEC protocol to TinyIR and making it more consistent.
+- [akellai](https://github.com/akellai) Added ESP 3.0 support.
+- [Hayden McAfee](https://github.com/haydenmc) Help with UnoR4 support.
+- [Yonghwan SO](https://github.com/sio4) Fixed bug in ReceiveDemo.cpp if DEBUG_BUTTON_PIN is not defined. #1306.
 
 Note: Please let [ArminJo](https://github.com/ArminJo) know if you have been missed.

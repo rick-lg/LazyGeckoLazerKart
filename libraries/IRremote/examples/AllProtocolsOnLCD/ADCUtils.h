@@ -29,6 +29,9 @@
 #if defined(__AVR__) && defined(ADCSRA) && defined(ADATE) && (!defined(__AVR_ATmega4809__))
 #define ADC_UTILS_ARE_AVAILABLE
 
+// External Reference Current is 150 uA for 5 V and 100 uA for 3.5 V
+#define READING_FOR_AREF 1024L // Datasheet 24.2: The minimum value represents GND and the maximum value represents the voltage on the AREF pin minus 1 LSB
+
 // PRESCALE4 => 13 * 4 = 52 microseconds per ADC conversion at 1 MHz Clock => 19,2 kHz
 #define ADC_PRESCALE2    1 // 26 microseconds per ADC conversion at 1 MHz
 #define ADC_PRESCALE4    2 // 52 microseconds per ADC conversion at 1 MHz
@@ -99,6 +102,12 @@
 #define ADC_TEMPERATURE_CHANNEL_MUX  8
 #define ADC_1_1_VOLT_CHANNEL_MUX    14
 #define ADC_GND_CHANNEL_MUX         15
+#define ADC_CHANNEL_MUX_MASK        0x0F
+
+#elif defined(__AVR_ATmega644P__)
+#define ADC_TEMPERATURE_CHANNEL_MUX  // not existent
+#define ADC_1_1_VOLT_CHANNEL_MUX    0x1E
+#define ADC_GND_CHANNEL_MUX         0x1F
 #define ADC_CHANNEL_MUX_MASK        0x0F
 
 #elif defined(__AVR_ATmega32U4__)
@@ -208,7 +217,8 @@ void resetCounterForVCCUndervoltageMultipleTimes();
 bool isVCCUndervoltage();
 bool isVCCEmergencyUndervoltage();
 bool isVCCOvervoltage();
-bool isVCCOvervoltageSimple();
+bool isVCCOvervoltageSimple();  // Version using readVCCVoltageMillivoltSimple()
+bool isVCCTooHighSimple();      // Version not using readVCCVoltageMillivoltSimple()
 
 #endif //  defined(__AVR__) ...
 

@@ -59,7 +59,7 @@
 
 //#define DEBUG               // Activate this for lots of lovely debug output from the decoders.
 
-//#define RAW_BUFFER_LENGTH  180  // Default is 112 if DECODE_MAGIQUEST is enabled, otherwise 100.
+//#define RAW_BUFFER_LENGTH  750 // For air condition remotes it may require up to 750. Default is 200.
 
 #include <Arduino.h>
 
@@ -77,6 +77,7 @@ void ReceiveCompleteCallbackHandler();
 
 void setup() {
     Serial.begin(115200);
+
     // Just to know which program is running on my Arduino
     Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE));
 

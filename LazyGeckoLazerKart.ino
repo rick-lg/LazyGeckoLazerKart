@@ -14,7 +14,7 @@
 
 
 //    SELECT "ESP32 DEV MODULE" AS THE BOARD
-#define VERSION_STR "7.03.2025 d2.0 DEMO"
+#define VERSION_STR "!7.03.2025-d2.0-DEMO"
 
 
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols

@@ -8,7 +8,7 @@
  ************************************************************************************
  * MIT License
  *
- * Copyright (c) 2017-2024 Darryl Smith, Armin Joachimsmeyer
+ * Copyright (c) 2017-2025 Darryl Smith, Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,7 +32,7 @@
 #ifndef _IR_SAMSUNG_HPP
 #define _IR_SAMSUNG_HPP
 
-#if defined(DEBUG) && !defined(LOCAL_DEBUG)
+#if defined(DEBUG)
 #define LOCAL_DEBUG
 #else
 //#define LOCAL_DEBUG // This enables debug output only for this file
@@ -74,7 +74,9 @@
 // Here https://forum.arduino.cc/t/klimaanlage-per-ir-steuern/1051381/10 the address (0xB24D) is also 8 bits and then 8 inverted bits
 //
 // Here https://github.com/flipperdevices/flipperzero-firmware/blob/master/lib/infrared/encoder_decoder/samsung/infrared_decoder_samsung.c#L18
-// Address is 8 bit + same 8 bit if data is 8 bit and ~8 bit.
+// Address is 8 bit + same 8 bit if command is 8 bit and ~8 bit.
+//
+// So we assume 8 bit address, if command is 8 bit and ~8 bit!
 //
 // IRP notation: {38k,5553}<1,-1|1,-3>(8,-8,D:8,S:8,F:8,~F:8,1,^110)+  ==> 8 bit + 8 bit inverted data - Samsung32
 // IRP notation: {38k,5553}<1,-1|1,-3>(8,-8,D:8,S:8,F:16,1,^110)+  ==> 16 bit data - still Samsung32
@@ -99,13 +101,14 @@
 #define SAMSUNG_REPEAT_PERIOD       110000 // Commands are repeated every 110 ms (measured from start to start) for as long as the key on the remote control is held down.
 #define SAMSUNG_MAXIMUM_REPEAT_DISTANCE     (SAMSUNG_REPEAT_PERIOD + (SAMSUNG_REPEAT_PERIOD / 4)) // 137000 - Just a guess
 
-struct PulseDistanceWidthProtocolConstants SamsungProtocolConstants = { SAMSUNG, SAMSUNG_KHZ, SAMSUNG_HEADER_MARK,
-SAMSUNG_HEADER_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ONE_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST,
-        (SAMSUNG_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), NULL };
+// 19 byte RAM
+struct PulseDistanceWidthProtocolConstants const SamsungProtocolConstants PROGMEM = {SAMSUNG, SAMSUNG_KHZ, SAMSUNG_HEADER_MARK,
+    SAMSUNG_HEADER_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ONE_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST,
+    (SAMSUNG_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), nullptr};
 
-struct PulseDistanceWidthProtocolConstants SamsungLGProtocolConstants = { SAMSUNGLG, SAMSUNG_KHZ, SAMSUNG_HEADER_MARK,
-SAMSUNG_HEADER_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ONE_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST,
-        (SAMSUNG_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), &sendSamsungLGSpecialRepeat };
+struct PulseDistanceWidthProtocolConstants const SamsungLGProtocolConstants PROGMEM = {SAMSUNGLG, SAMSUNG_KHZ, SAMSUNG_HEADER_MARK,
+    SAMSUNG_HEADER_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ONE_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST,
+    (SAMSUNG_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), &sendSamsungLGSpecialRepeat};
 /************************************
  * Start of send and decode functions
  ************************************/
@@ -140,6 +143,7 @@ void sendSamsungLGSpecialRepeat() {
 
 /*
  * Sent e.g. by an LG 6711R1P071A remote
+ * @param aAddress 16 bit address. If < 0x100, i.e. only 8 bit, then a (standard) 16 bit address <8_bit_address><8_bit_address> is generated.
  * @param aNumberOfRepeats If < 0 then only a special repeat frame will be sent
  */
 void IRsend::sendSamsungLG(uint16_t aAddress, uint16_t aCommand, int_fast8_t aNumberOfRepeats) {
@@ -151,26 +155,30 @@ void IRsend::sendSamsungLG(uint16_t aAddress, uint16_t aCommand, int_fast8_t aNu
     // send 16 bit address and  8 command bits and then 8 inverted command bits LSB first
     LongUnion tRawData;
     tRawData.UWord.LowWord = aAddress;
+    if (aAddress < 0x100) { // This disables the sending of an (non standard?) 16 bit address with upper byte = 0 like 0x0014.
+        tRawData.UByte.MidLowByte = aAddress; // here we have 8 bit address which must be duplicated
+    }
     tRawData.UByte.MidHighByte = aCommand;
     tRawData.UByte.HighByte = ~aCommand;
 
-    sendPulseDistanceWidth(&SamsungLGProtocolConstants, tRawData.ULong, SAMSUNG_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidth_P(&SamsungLGProtocolConstants, tRawData.ULong, SAMSUNG_BITS, aNumberOfRepeats);
 }
 
 /**
  * Here we send Samsung32
  * If we get a command < 0x100, we send command and then ~command
- * If we get an address < 0x100, we send address and then address again, this makes it flipper IRDB compatible
+ * If we get an address < 0x100, we send 8 bit address and then the same 8 bit address again, this makes it flipper IRDB compatible
  * !!! Be aware, that this is flexible, but makes it impossible to send e.g. 0x0042 as 16 bit value!!!
+ * To force send 16 bit address, use: sendSamsung16BitAddressAndCommand().
  * @param aNumberOfRepeats If < 0 then only a special repeat frame will be sent
  */
 void IRsend::sendSamsung(uint16_t aAddress, uint16_t aCommand, int_fast8_t aNumberOfRepeats) {
 
     LongUnion tSendValue;
     if (aAddress < 0x100) {
-        // This makes it flipper IRDB compatible
+        // This makes it flipper IRDB compatible:
         // https://github.com/flipperdevices/flipperzero-firmware/blob/master/lib/infrared/encoder_decoder/samsung/infrared_decoder_samsung.c#L18
-        // Duplicate address byte, if data is 8 bit and 8 bit inverted and address is 8bit
+        // Duplicate address byte, if address is only 8 bit
         tSendValue.UBytes[1] = aAddress;
         tSendValue.UBytes[0] = aAddress;
     } else {
@@ -187,7 +195,24 @@ void IRsend::sendSamsung(uint16_t aAddress, uint16_t aCommand, int_fast8_t aNumb
         tSendValue.UWords[1] = aCommand;
     }
 
-    sendPulseDistanceWidth(&SamsungProtocolConstants, tSendValue.ULong, SAMSUNG_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidth_P(&SamsungProtocolConstants, tSendValue.ULong, SAMSUNG_BITS, aNumberOfRepeats);
+}
+
+/**
+ * Maybe no one needs it in the wild...
+ * As above, but we are able to send e.g. 0x0042 as 16 bit address
+ * @param aNumberOfRepeats If < 0 then only a special repeat frame will be sent
+ */
+void IRsend::sendSamsung16BitAddressAnd8BitCommand(uint16_t aAddress, uint8_t aCommand, int_fast8_t aNumberOfRepeats) {
+
+    LongUnion tSendValue;
+    // send 16 bit address
+    tSendValue.UWords[0] = aAddress;
+    // Send 8 command bits and then 8 inverted command bits LSB first
+    tSendValue.UBytes[2] = aCommand;
+    tSendValue.UBytes[3] = ~aCommand;
+
+    sendPulseDistanceWidth_P(&SamsungProtocolConstants, tSendValue.ULong, SAMSUNG_BITS, aNumberOfRepeats);
 }
 
 /**
@@ -203,9 +228,8 @@ void IRsend::sendSamsung16BitAddressAndCommand(uint16_t aAddress, uint16_t aComm
     // Send 16 command bits
     tSendValue.UWords[1] = aCommand;
 
-    sendPulseDistanceWidth(&SamsungProtocolConstants, tSendValue.ULong, SAMSUNG_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidth_P(&SamsungProtocolConstants, tSendValue.ULong, SAMSUNG_BITS, aNumberOfRepeats);
 }
-
 /**
  * Here we send Samsung48
  * We send 2 x (8 bit command and then ~command)
@@ -224,7 +248,7 @@ void IRsend::sendSamsung48(uint16_t aAddress, uint32_t aCommand, int_fast8_t aNu
     tRawSamsungData[1] = tUpper8BitsOfCommand | (~tUpper8BitsOfCommand) << 8;
     tRawSamsungData[0] = tSendValue.ULong;
 
-    sendPulseDistanceWidthFromArray(&SamsungProtocolConstants, &tRawSamsungData[0], SAMSUNG48_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidthFromArray_P(&SamsungProtocolConstants, &tRawSamsungData[0], SAMSUNG48_BITS, aNumberOfRepeats);
 #else
     LongLongUnion tSendValue;
     tSendValue.UWords[0] = aAddress;
@@ -237,10 +261,15 @@ void IRsend::sendSamsung48(uint16_t aAddress, uint32_t aCommand, int_fast8_t aNu
     } else {
         tSendValue.ULongLong = aAddress | aCommand << 16;
     }
-    sendPulseDistanceWidth(&SamsungProtocolConstants, tSendValue.ULongLong, SAMSUNG48_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidth_P(&SamsungProtocolConstants, tSendValue.ULongLong, SAMSUNG48_BITS, aNumberOfRepeats);
 #endif
 }
 
+/*
+ * We cannot decode frames with 8 command bits and then 8 inverted command bits LSB and 16 bit address,
+ * because in this case we always assume 8 bit address.
+ * This is, because we did not see 8 bit command and real 16 bit address in the wild.
+ */
 bool IRrecv::decodeSamsung() {
 
     // Check we have enough data (68). The +4 is for initial gap, start bit mark and space + stop bit mark
@@ -253,7 +282,7 @@ bool IRrecv::decodeSamsung() {
         return false;
     }
 
-    if (!checkHeader(&SamsungProtocolConstants)) {
+    if (!checkHeader_P(&SamsungProtocolConstants)) {
         return false;
     }
 
@@ -269,7 +298,7 @@ bool IRrecv::decodeSamsung() {
     /*
      * Decode first 32 bits
      */
-    if (!decodePulseDistanceWidthData(&SamsungProtocolConstants, SAMSUNG_BITS, 3)) {
+    if (!decodePulseDistanceWidthData_P(&SamsungProtocolConstants, SAMSUNG_BITS, 3)) {
 #if defined(LOCAL_DEBUG)
         Serial.print(F("Samsung: "));
         Serial.println(F("Decode failed"));
@@ -285,7 +314,7 @@ bool IRrecv::decodeSamsung() {
          * Samsung48
          */
         // decode additional 16 bit
-        if (!decodePulseDistanceWidthData(&SamsungProtocolConstants, (SAMSUNG_COMMAND32_BITS - SAMSUNG_COMMAND16_BITS),
+        if (!decodePulseDistanceWidthData_P(&SamsungProtocolConstants, (SAMSUNG_COMMAND32_BITS - SAMSUNG_COMMAND16_BITS),
                 3 + (2 * SAMSUNG_BITS))) {
 #if defined(LOCAL_DEBUG)
             Serial.print(F("Samsung: "));
@@ -322,13 +351,17 @@ bool IRrecv::decodeSamsung() {
          * Samsung32
          */
         if (tValue.UByte.MidHighByte == (uint8_t)(~tValue.UByte.HighByte)) {
-            // 8 bit command (and address) protocol
+            // 8 bit command protocol -> assume 8 bit address
             decodedIRData.command = tValue.UByte.MidHighByte; // first 8 bit
-            decodedIRData.address = tValue.UByte.MidLowByte;  // assume LowByte == MidLowByte
+        }
+
+        if (tValue.UByte.MidLowByte == tValue.UByte.LowByte) {
+            decodedIRData.address = tValue.UByte.LowByte; // assume LowByte == MidLowByte as seen for a LG HX906 A/V Receive E8172C2C
         } else {
-            // 16 bit command protocol
+            // 16 bit command protocol, address is filled above with the 16 bit value
             decodedIRData.command = tValue.UWord.HighWord; // first 16 bit
         }
+
         decodedIRData.numberOfBits = SAMSUNG_BITS;
         decodedIRData.protocol = SAMSUNG;
     }
@@ -368,8 +401,7 @@ bool IRrecv::decodeSAMSUNG(decode_results *aResults) {
     }
     offset++;
 
-    if (!decodePulseDistanceWidthData(SAMSUNG_BITS, offset, SAMSUNG_BIT_MARK, 0, SAMSUNG_ONE_SPACE, SAMSUNG_ZERO_SPACE,
-            PROTOCOL_IS_MSB_FIRST)) {
+    if (!decodePulseDistanceWidthData(SAMSUNG_BITS, offset, SAMSUNG_BIT_MARK, SAMSUNG_ONE_SPACE, 0, PROTOCOL_IS_MSB_FIRST)) {
         return false;
     }
 
@@ -382,7 +414,7 @@ bool IRrecv::decodeSAMSUNG(decode_results *aResults) {
 }
 
 // Old version with MSB first
-void IRsend::sendSAMSUNG(unsigned long data, int nbits) {
+void IRsend::sendSamsungMSB(unsigned long data, int nbits) {
     // Set IR carrier frequency
     enableIROut (SAMSUNG_KHZ);
 
@@ -393,6 +425,9 @@ void IRsend::sendSAMSUNG(unsigned long data, int nbits) {
     // Old version with MSB first Data + stop bit
     sendPulseDistanceWidthData(SAMSUNG_BIT_MARK, SAMSUNG_ONE_SPACE, SAMSUNG_BIT_MARK, SAMSUNG_ZERO_SPACE, data, nbits,
             PROTOCOL_IS_MSB_FIRST);
+}
+void IRsend::sendSAMSUNG(unsigned long data, int nbits) {
+    sendSamsungMSB(data, nbits);
 }
 
 /** @}*/
