@@ -8,7 +8,7 @@
  ************************************************************************************
  * MIT License
  *
- * Copyright (c) 2020-2025 Armin Joachimsmeyer
+ * Copyright (c) 2020-2023 Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -47,7 +47,7 @@ typedef enum {
     LG,
     LG2,
     NEC,
-    NEC2, /* 10 NEC with full frame as repeat */
+    NEC2, /* NEC with full frame as repeat */
     ONKYO,
     PANASONIC,
     KASEIKYO,
@@ -57,8 +57,7 @@ typedef enum {
     KASEIKYO_MITSUBISHI,
     RC5,
     RC6,
-    RC6A, /*31 bit +  3 fixed 0b110 mode bits*/
-    SAMSUNG, /* 20*/
+    SAMSUNG,
     SAMSUNGLG,
     SAMSUNG48,
     SHARP,
@@ -68,10 +67,9 @@ typedef enum {
     BOSEWAVE,
     LEGO_PF,
     MAGIQUEST,
-    WHYNTER, /* 30 */
+    WHYNTER,
     FAST
 } decode_type_t;
-extern const char *const ProtocolNames[]; // The array of name strings for the decode_type_t enum
 
 #define SIRCS_12_PROTOCOL       12
 #define SIRCS_15_PROTOCOL       15
@@ -101,7 +99,7 @@ struct DistanceWidthTimingInfoStruct {
 #define IRDATA_FLAGS_IS_MSB_FIRST       0x80 ///< Value is mainly determined by the (known) protocol.
 #define IRDATA_FLAGS_IS_LSB_FIRST       0x00
 
-#define DECODED_RAW_DATA_ARRAY_SIZE     ((((RAW_BUFFER_LENGTH - 2) - 1) / (2 * BITS_IN_RAW_DATA_TYPE)) + 1) // The -2 is for initial gap + stop bit mark, 128 mark + spaces for 64 bit.
+#define RAW_DATA_ARRAY_SIZE             ((((RAW_BUFFER_LENGTH - 2) - 1) / (2 * BITS_IN_RAW_DATA_TYPE)) + 1) // The -2 is for initial gap + stop bit mark, 128 mark + spaces for 64 bit.
 /**
  * Data structure for the user application, available as decodedIRData.
  * Filled by decoders and read by print functions or user application.
@@ -115,24 +113,21 @@ struct IRData {
 #if defined(DECODE_DISTANCE_WIDTH)
     // This replaces the address, command, extra and decodedRawData in case of protocol == PULSE_DISTANCE or -rather seldom- protocol == PULSE_WIDTH.
     DistanceWidthTimingInfoStruct DistanceWidthTimingInfo; // 12 bytes
-    IRRawDataType decodedRawDataArray[DECODED_RAW_DATA_ARRAY_SIZE]; ///< 32/64 bit decoded raw data, to be used for send function.
+    IRRawDataType decodedRawDataArray[RAW_DATA_ARRAY_SIZE]; ///< 32/64 bit decoded raw data, to be used for send function.
 #endif
     uint16_t numberOfBits; ///< Number of bits received for data (address + command + parity) - to determine protocol length if different length are possible.
     uint8_t flags;          ///< IRDATA_FLAGS_IS_REPEAT, IRDATA_FLAGS_WAS_OVERFLOW etc. See IRDATA_FLAGS_* definitions above
 
-    /*
-     * These 2 variables allow to call resume() directly after decode.
-     * After resume(), decodedIRData.rawDataPtr->initialGapTicks and decodedIRData.rawDataPtr->rawlen are
-     * the first variables, which are overwritten by the next received frame.
-     * since 4.3.0.
-     */
-    IRRawlenType rawlen;        ///< counter of entries in rawbuf of last received frame.
-    uint16_t initialGapTicks;   ///< contains the initial gap (pre 4.4: the value in rawbuf[0]) of the last received frame.
+    //These 2 variables allow to call resume() directly after decode, if no dump is required. Since 4.3.0.
+#if RAW_BUFFER_LENGTH <= 254    // saves around 75 bytes program memory and speeds up ISR
+    uint_fast8_t rawlen;        ///< counter of entries in rawbuf
+#else
+    uint_fast16_t rawlen;       ///< counter of entries in rawbuf
+#endif
+    uint16_t initialGap;        ///< rawbuf[0] contains the initial gap of the last frame.
 
     irparams_struct *rawDataPtr; ///< Pointer of the raw timing data to be decoded. Mainly the OverflowFlag and the data buffer filled by receiving ISR.
 };
-
-extern uint8_t sLastSendToggleValue; // Currently used by RC5 + RC6
 
 struct PulseDistanceWidthProtocolConstants {
     decode_type_t ProtocolIndex;
@@ -146,9 +141,12 @@ struct PulseDistanceWidthProtocolConstants {
 /*
  * Definitions for member PulseDistanceWidthProtocolConstants.Flags
  */
-#define SUPPRESS_STOP_BIT       0x20 // Stop bit is otherwise sent for all pulse distance protocols, i.e. aOneSpaceMicros != aZeroSpaceMicros.
-#define PROTOCOL_IS_MSB_FIRST   IRDATA_FLAGS_IS_MSB_FIRST
-#define PROTOCOL_IS_LSB_FIRST   IRDATA_FLAGS_IS_LSB_FIRST
+#define SUPPRESS_STOP_BIT_FOR_THIS_DATA 0x20
+#define PROTOCOL_IS_MSB_FIRST           IRDATA_FLAGS_IS_MSB_FIRST
+#define PROTOCOL_IS_LSB_FIRST           IRDATA_FLAGS_IS_LSB_FIRST
+// 2 definitions for deprecated parameter bool aSendStopBit
+#define SEND_STOP_BIT true
+#define SEND_NO_STOP_BIT false
 
 /*
  * Carrier frequencies for various protocols
@@ -171,8 +169,7 @@ const __FlashStringHelper* getProtocolString(decode_type_t aProtocol);
 #else
 const char* getProtocolString(decode_type_t aProtocol);
 #endif
-void printIRResultShort(Print *aSerial, IRData *aIRDataPtr, bool aPrintRepeatGap)  __attribute__ ((deprecated ("Remove last parameter, it is not supported any more.")));
-void printIRResultShort(Print *aSerial, IRData *aIRDataPtr); // A static function to be able to print send or copied received data.
+void printIRResultShort(Print *aSerial, IRData *aIRDataPtr, bool aPrintGap); // A static function to be able to print send or copied received data.
 
 /*
  * Convenience functions to convert MSB to LSB values

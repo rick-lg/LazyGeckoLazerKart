@@ -27,14 +27,10 @@
 
 #include "ADCUtils.h"
 #if defined(ADC_UTILS_ARE_AVAILABLE) // set in ADCUtils.h, if supported architecture was detected
-#define ADC_UTILS_ARE_INCLUDED
 
-#if !defined(STR)
+#if !defined(STR_HELPER)
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
-#endif
-#if !defined(BITS_PER_BYTE)
-#define BITS_PER_BYTE 8
 #endif
 
 /*
@@ -62,15 +58,10 @@ union WordUnionForADCUtils {
  * Enable this to see information on each call.
  * Since there should be no library which uses Serial, it should only be enabled for development purposes.
  */
-#if defined(DEBUG)
+#if defined(DEBUG) && !defined(LOCAL_DEBUG)
 #define LOCAL_DEBUG
 #else
 //#define LOCAL_DEBUG // This enables debug output only for this file
-#endif
-#if defined(INFO)
-#define LOCAL_INFO
-#else
-//#define LOCAL_INFO // This enables debug output only for this file
 #endif
 
 /*
@@ -412,7 +403,7 @@ uint16_t readUntil4ConsecutiveValuesAreEqual(uint8_t aADCChannelNumber, uint8_t 
         /*
          * Get min and max of the last 4 values
          */
-        tMin = READING_FOR_AREF;
+        tMin = 1024;
         tMax = 0;
         for (uint_fast8_t i = 0; i < 4; ++i) {
             if (tValues[i] < tMin) {
@@ -481,7 +472,7 @@ uint16_t readUntil4ConsecutiveValuesAreEqual(uint8_t aADCChannelNumber, uint8_t 
 float getVCCVoltageSimple(void) {
     // use AVCC with (optional) external capacitor at AREF pin as reference
     float tVCC = readADCChannelMultiSamplesWithReference(ADC_1_1_VOLT_CHANNEL_MUX, DEFAULT, 4);
-    return ((READING_FOR_AREF * 1.1 * 4) / tVCC);
+    return ((1023 * 1.1 * 4) / tVCC);
 }
 
 /*
@@ -492,19 +483,19 @@ float getVCCVoltageSimple(void) {
 uint16_t getVCCVoltageMillivoltSimple(void) {
     // use AVCC with external capacitor at AREF pin as reference
     uint16_t tVCC = readADCChannelMultiSamplesWithReference(ADC_1_1_VOLT_CHANNEL_MUX, DEFAULT, 4);
-    return ((READING_FOR_AREF * ADC_INTERNAL_REFERENCE_MILLIVOLT * 4) / tVCC);
+    return ((1023L * ADC_INTERNAL_REFERENCE_MILLIVOLT * 4) / tVCC);
 }
 
 /*
  * Gets the hypothetical 14 bit reading of VCC using 1.1 volt reference
- * Similar to getVCCVoltageMillivolt() * 1024 / 1100
+ * Similar to getVCCVoltageMillivolt() * 1023 / 1100
  */
 uint16_t getVCCVoltageReadingFor1_1VoltReference(void) {
     uint16_t tVCC = waitAndReadADCChannelWithReference(ADC_1_1_VOLT_CHANNEL_MUX, DEFAULT);
     /*
      * Do not switch back ADMUX to enable checkAndWaitForReferenceAndChannelToSwitch() to work correctly for the next measurement
      */
-    return ((READING_FOR_AREF * READING_FOR_AREF) / tVCC);
+    return ((1023L * 1023L) / tVCC);
 }
 
 /*
@@ -528,7 +519,7 @@ uint16_t getVCCVoltageMillivolt(void) {
     /*
      * Do not switch back ADMUX to enable checkAndWaitForReferenceAndChannelToSwitch() to work correctly for the next measurement
      */
-    return ((READING_FOR_AREF * ADC_INTERNAL_REFERENCE_MILLIVOLT) / tVCC);
+    return ((1023L * ADC_INTERNAL_REFERENCE_MILLIVOLT) / tVCC);
 }
 
 /*
@@ -556,7 +547,7 @@ void readAndPrintVCCVoltageMillivolt(Print *aSerial) {
 void readVCCVoltageSimple(void) {
     // use AVCC with (optional) external capacitor at AREF pin as reference
     float tVCC = readADCChannelMultiSamplesWithReference(ADC_1_1_VOLT_CHANNEL_MUX, DEFAULT, 4);
-    sVCCVoltage = (READING_FOR_AREF * (((float) ADC_INTERNAL_REFERENCE_MILLIVOLT) / 1000) * 4) / tVCC;
+    sVCCVoltage = (1023 * (((float) ADC_INTERNAL_REFERENCE_MILLIVOLT) / 1000) * 4) / tVCC;
 }
 
 /*
@@ -567,7 +558,7 @@ void readVCCVoltageSimple(void) {
 void readVCCVoltageMillivoltSimple(void) {
     // use AVCC with external capacitor at AREF pin as reference
     uint16_t tVCCVoltageMillivoltRaw = readADCChannelMultiSamplesWithReference(ADC_1_1_VOLT_CHANNEL_MUX, DEFAULT, 4);
-    sVCCVoltageMillivolt = (READING_FOR_AREF * ADC_INTERNAL_REFERENCE_MILLIVOLT * 4) / tVCCVoltageMillivoltRaw;
+    sVCCVoltageMillivolt = (1023L * ADC_INTERNAL_REFERENCE_MILLIVOLT * 4) / tVCCVoltageMillivoltRaw;
 }
 
 /*
@@ -588,7 +579,7 @@ void readVCCVoltageMillivolt(void) {
     /*
      * Do not switch back ADMUX to enable checkAndWaitForReferenceAndChannelToSwitch() to work correctly for the next measurement
      */
-    sVCCVoltageMillivolt = (READING_FOR_AREF * ADC_INTERNAL_REFERENCE_MILLIVOLT) / tVCCVoltageMillivoltRaw;
+    sVCCVoltageMillivolt = (1023L * ADC_INTERNAL_REFERENCE_MILLIVOLT) / tVCCVoltageMillivoltRaw;
 }
 
 /*
@@ -597,7 +588,7 @@ void readVCCVoltageMillivolt(void) {
  */
 uint16_t getVoltageMillivolt(uint16_t aVCCVoltageMillivolt, uint8_t aADCChannelForVoltageMeasurement) {
     uint16_t tInputVoltageRaw = waitAndReadADCChannelWithReference(aADCChannelForVoltageMeasurement, DEFAULT);
-    return (aVCCVoltageMillivolt * (uint32_t) tInputVoltageRaw) / READING_FOR_AREF;
+    return (aVCCVoltageMillivolt * (uint32_t) tInputVoltageRaw) / 1023;
 }
 
 /*
@@ -606,18 +597,16 @@ uint16_t getVoltageMillivolt(uint16_t aVCCVoltageMillivolt, uint8_t aADCChannelF
  */
 uint16_t getVoltageMillivolt(uint8_t aADCChannelForVoltageMeasurement) {
     uint16_t tInputVoltageRaw = waitAndReadADCChannelWithReference(aADCChannelForVoltageMeasurement, DEFAULT);
-    return (getVCCVoltageMillivolt() * (uint32_t) tInputVoltageRaw) / READING_FOR_AREF;
+    return (getVCCVoltageMillivolt() * (uint32_t) tInputVoltageRaw) / 1023;
 }
 
 uint16_t getVoltageMillivoltWith_1_1VoltReference(uint8_t aADCChannelForVoltageMeasurement) {
     uint16_t tInputVoltageRaw = waitAndReadADCChannelWithReference(aADCChannelForVoltageMeasurement, INTERNAL);
-    return (ADC_INTERNAL_REFERENCE_MILLIVOLT * (uint32_t) tInputVoltageRaw) / READING_FOR_AREF;
+    return (ADC_INTERNAL_REFERENCE_MILLIVOLT * (uint32_t) tInputVoltageRaw) / 1023;
 }
 
 /*
  * Return true if sVCCVoltageMillivolt is > 4.3 V and < 4.95 V
- * This does not really work for the UNO board, because it has no series Diode in the USB VCC
- * and therefore a very low voltage drop.
  */
 bool isVCCUSBPowered() {
     readVCCVoltageMillivolt();
@@ -645,13 +634,13 @@ bool isVCCUSBPowered(Print *aSerial) {
 }
 
 /*
- * It checks every 10 seconds for 6 times, and then returns true if the undervoltage condition ( <3.4V ) still applies.
  * @ return true only once, when VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP (6) times voltage too low -> shutdown
  */
 bool isVCCUndervoltageMultipleTimes() {
     /*
      * Check VCC every VCC_CHECK_PERIOD_MILLIS (10) seconds
      */
+
     if (millis() - sLastVCCCheckMillis >= VCC_CHECK_PERIOD_MILLIS) {
         sLastVCCCheckMillis = millis();
 
@@ -661,32 +650,30 @@ bool isVCCUndervoltageMultipleTimes() {
         readVCCVoltageMillivolt();
 #  endif
 
-        /*
-         * Do not check again if shutdown signaling (sVCCTooLowCounter >= 6) has happened
-         */
-        if (sVCCTooLowCounter < VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP) { // VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP = 6
+        if (sVCCTooLowCounter < VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP) {
+            /*
+             * Do not check again if shutdown has happened
+             */
             if (sVCCVoltageMillivolt > VCC_UNDERVOLTAGE_THRESHOLD_MILLIVOLT) {
                 sVCCTooLowCounter = 0; // reset counter
             } else {
                 /*
-                 * Voltage too low, wait VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP (6) times and then signal shut down.
+                 * Voltage too low, wait VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP (6) times and then shut down.
                  */
                 if (sVCCVoltageMillivolt < VCC_EMERGENCY_UNDERVOLTAGE_THRESHOLD_MILLIVOLT) {
                     // emergency shutdown
                     sVCCTooLowCounter = VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP;
-#  if defined(LOCAL_INFO)
+#  if defined(INFO)
                     Serial.println(
                             F(
                                     "Voltage < " STR(VCC_EMERGENCY_UNDERVOLTAGE_THRESHOLD_MILLIVOLT) " mV detected -> emergency shutdown"));
 #  endif
                 } else {
                     sVCCTooLowCounter++;
-#  if defined(LOCAL_INFO)
-                    Serial.print(sVCCVoltageMillivolt);
-                    Serial.print(F(" mV < " STR(VCC_UNDERVOLTAGE_THRESHOLD_MILLIVOLT) " mV detected: "));
-
+#  if defined(INFO)
+                    Serial.print(F("Voltage < " STR(VCC_UNDERVOLTAGE_THRESHOLD_MILLIVOLT) " mV detected: "));
                     Serial.print(VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP - sVCCTooLowCounter);
-                    Serial.println(F(" attempts left"));
+                    Serial.println(F(" tries left"));
 #  endif
                 }
                 if (sVCCTooLowCounter == VCC_UNDERVOLTAGE_CHECKS_BEFORE_STOP) {
@@ -728,7 +715,6 @@ void resetCounterForVCCUndervoltageMultipleTimes() {
  * Raw reading of 1.1 V is 221 at 5.1 V.
  * Raw reading of 1.1 V is 214 at 5.25 V (+5 %).
  * Raw reading of 1.1 V is 204 at 5.5 V (+10 %).
- * Raw reading of 1.1 V is 1126000 / VCC_MILLIVOLT
  * @return true if 5 % overvoltage reached
  */
 bool isVCCOvervoltage() {
@@ -738,21 +724,6 @@ bool isVCCOvervoltage() {
 bool isVCCOvervoltageSimple() {
     readVCCVoltageMillivoltSimple();
     return (sVCCVoltageMillivolt > VCC_OVERVOLTAGE_THRESHOLD_MILLIVOLT);
-}
-
-// Version not using readVCCVoltageMillivoltSimple()
-bool isVCCTooHighSimple() {
-    ADMUX = ADC_1_1_VOLT_CHANNEL_MUX | (DEFAULT << SHIFT_VALUE_FOR_REFERENCE);
-// ADCSRB = 0; // Only active if ADATE is set to 1.
-// ADSC-StartConversion ADIF-Reset Interrupt Flag - NOT free running mode
-    ADCSRA = (_BV(ADEN) | _BV(ADSC) | _BV(ADIF) | ADC_PRESCALE128); //  128 -> 104 microseconds per ADC conversion at 16 MHz --- Arduino default
-// wait for single conversion to finish
-    loop_until_bit_is_clear(ADCSRA, ADSC);
-
-// Get value
-    uint16_t tRawValue = ADCL | (ADCH << 8);
-
-    return tRawValue < 1126000 / VCC_OVERVOLTAGE_THRESHOLD_MILLIVOLT;
 }
 
 /*
@@ -766,21 +737,18 @@ float getCPUTemperatureSimple(void) {
     return 0.0;
 #else
     // use internal 1.1 volt as reference. 4 times oversample. Assume the signal has noise, but never verified :-(
-    uint16_t tTemperatureRaw = readADCChannelWithReferenceOversample(ADC_TEMPERATURE_CHANNEL_MUX, INTERNAL, 2);
+    uint16_t tTempRaw = readADCChannelWithReferenceOversample(ADC_TEMPERATURE_CHANNEL_MUX, INTERNAL, 2);
 #if defined(LOCAL_DEBUG)
     Serial.print(F("TempRaw="));
-    Serial.println(tTemperatureRaw);
+    Serial.println(tTempRaw);
 #endif
 
 #if defined(__AVR_ATmega328PB__)
-    tTemperatureRaw -= 245;
-    return (float)tTemperatureRaw;
-#elif defined(__AVR_ATtiny85__)
-    tTemperatureRaw -= 273; // 273 and 1.1666 are values from the datasheet
-    return (float)tTemperatureRaw / 1.1666;
+    tTempRaw -= 245;
+    return (float)tTempRaw;
 #else
-    tTemperatureRaw -= 317;
-    return (float) tTemperatureRaw / 1.22;
+    tTempRaw -= 317;
+    return (float) tTempRaw / 1.22;
 #endif
 #endif
 }
@@ -827,8 +795,5 @@ float getVCCVoltage() {
 
 #if defined(LOCAL_DEBUG)
 #undef LOCAL_DEBUG
-#endif
-#if defined(LOCAL_INFO)
-#undef LOCAL_INFO
 #endif
 #endif // _ADC_UTILS_HPP

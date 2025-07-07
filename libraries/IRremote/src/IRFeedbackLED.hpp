@@ -47,7 +47,7 @@ struct FeedbackLEDControlStruct {
 struct FeedbackLEDControlStruct FeedbackLEDControl; ///< The feedback LED control instance
 
 /**
- * Enables blinking of feedback LED (LED_BUILTIN is taken as default) on IR sending and receiving
+ * Enable blinking of feedback LED (LED_BUILTIN is taken as default) on IR sending and receiving
  * Cannot disable it here!!! Use disableLEDFeedbackForReceive() or disableLEDFeedbackForSend()
  * @param aFeedbackLEDPin If aFeedbackLEDPin == 0, then take board specific FEEDBACK_LED_ON() and FEEDBACK_LED_ON() and FEEDBACK_LED_OFF() functions
  *                        If FeedbackLEDPin == 0 and no LED_BUILTIN defined, disable LED feedback
@@ -108,35 +108,33 @@ IRAM_ATTR
 void setFeedbackLED(bool aSwitchLedOn) {
     if (aSwitchLedOn) {
         if (FeedbackLEDControl.FeedbackLEDPin != USE_DEFAULT_FEEDBACK_LED_PIN) {
-            // Turn user defined pin LED on
 #if defined(FEEDBACK_LED_IS_ACTIVE_LOW)
-            if (__builtin_constant_p(FeedbackLEDControl.FeedbackLEDPin) ) { digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, LOW);} else { digitalWrite(FeedbackLEDControl.FeedbackLEDPin, LOW);}
+                digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, LOW); // Turn user defined pin LED on
 #else
-            if (__builtin_constant_p(FeedbackLEDControl.FeedbackLEDPin) ) { digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, HIGH);} else { digitalWrite(FeedbackLEDControl.FeedbackLEDPin, HIGH);}
+            digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, HIGH); // Turn user defined pin LED on
 #endif
 #if defined(LED_BUILTIN) // use fast macros here
-        } else {
+            } else {
 #  if defined(FEEDBACK_LED_IS_ACTIVE_LOW)
-            digitalWriteFast(LED_BUILTIN, LOW); // For AVR, this generates a single cbi command
+                digitalWriteFast(LED_BUILTIN, LOW); // For AVR, this generates a single cbi command
 #  else
-            digitalWriteFast(LED_BUILTIN, HIGH); // For AVR, this generates a single sbi command
+                digitalWriteFast(LED_BUILTIN, HIGH); // For AVR, this generates a single sbi command
 #  endif
 #endif
         }
     } else {
         if (FeedbackLEDControl.FeedbackLEDPin != USE_DEFAULT_FEEDBACK_LED_PIN) {
-            // Turn user defined pin LED off
 #if defined(FEEDBACK_LED_IS_ACTIVE_LOW)
-            if (__builtin_constant_p(FeedbackLEDControl.FeedbackLEDPin) ) { digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, HIGH);} else { digitalWrite(FeedbackLEDControl.FeedbackLEDPin, HIGH);}
+            digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, HIGH); // Turn user defined pin LED off
 #else
-            if (__builtin_constant_p(FeedbackLEDControl.FeedbackLEDPin) ) { digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, LOW);} else { digitalWrite(FeedbackLEDControl.FeedbackLEDPin, LOW);}
+            digitalWriteFast(FeedbackLEDControl.FeedbackLEDPin, LOW); // Turn user defined pin LED off
 #endif
 #if defined(LED_BUILTIN)
-        } else {
+            } else {
 #  if defined(FEEDBACK_LED_IS_ACTIVE_LOW)
-            digitalWriteFast(LED_BUILTIN, HIGH); // For AVR, this generates a single sbi command
+                digitalWriteFast(LED_BUILTIN, HIGH); // For AVR, this generates a single sbi command
 #  else
-            digitalWriteFast(LED_BUILTIN, LOW); // For AVR, this generates a single cbi command
+                digitalWriteFast(LED_BUILTIN, LOW); // For AVR, this generates a single cbi command
 #  endif
 #endif
         }

@@ -26,7 +26,7 @@
  ************************************************************************************
  * MIT License
  *
- * Copyright (c) 2022-2024 Armin Joachimsmeyer
+ * Copyright (c) 2022-2023 Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -56,18 +56,14 @@
 //#define TRACE // to see the state of the ISR state machine
 
 /*
- * Protocol selection
+ * Set compile options to modify the generated code.
  */
 //#define DISABLE_PARITY_CHECKS // Disable parity checks. Saves 48 bytes of program memory.
 //#define USE_EXTENDED_NEC_PROTOCOL // Like NEC, but take the 16 bit address as one 16 bit value and not as 8 bit normal and 8 bit inverted value.
 //#define USE_ONKYO_PROTOCOL    // Like NEC, but take the 16 bit address and command each as one 16 bit value and not as 8 bit normal and 8 bit inverted value.
-//#define USE_FAST_PROTOCOL     // Use FAST protocol instead of NEC / ONKYO.
-//#define ENABLE_NEC2_REPEATS // Instead of sending / receiving the NEC special repeat code, send / receive the original frame for repeat.
-/*
- * Set compile options to modify the generated code.
- */
-//#define DISABLE_PARITY_CHECKS // Disable parity checks. Saves 48 bytes of program memory.
-//#define USE_CALLBACK_FOR_TINY_RECEIVER  // Call the user provided function "void handleReceivedTinyIRData()" each time a frame or repeat is received.
+//#define USE_FAST_PROTOCOL     // Use FAST protocol (no address and 16 bit data, interpreted as 8 bit command and 8 bit inverted command) instead of NEC / ONKYO.
+//#define ENABLE_NEC2_REPEATS   // Instead of sending / receiving the NEC special repeat code, send / receive the original frame for repeat.
+//#define USE_CALLBACK_FOR_TINY_RECEIVER  // Call the fixed function "void handleReceivedTinyIRData()" each time a frame or repeat is received.
 
 #include "TinyIRReceiver.hpp" // include the code
 
@@ -81,17 +77,9 @@
 
 void setup() {
     Serial.begin(115200);
-
-#if defined(__AVR_ATmega32U4__) || defined(SERIAL_PORT_USBVIRTUAL) || defined(SERIAL_USB) /*stm32duino*/|| defined(USBCON) /*STM32_stm32*/ \
-    || defined(SERIALUSB_PID)  || defined(ARDUINO_ARCH_RP2040) || defined(ARDUINO_attiny3217)
-    // Wait until Serial Monitor is attached.
-    // Required for boards using USB code for Serial like Leonardo.
-    // Is void for USB Serial implementations using external chips e.g. a CH340.
-    while (!Serial)
-        ;
-    // !!! Program will not proceed if no Serial Monitor is attached !!!
+#if defined(__AVR_ATmega32U4__) || defined(SERIAL_PORT_USBVIRTUAL) || defined(SERIAL_USB) /*stm32duino*/|| defined(USBCON) /*STM32_stm32*/|| defined(SERIALUSB_PID) || defined(ARDUINO_attiny3217)
+    delay(4000); // To be able to connect Serial monitor after reset or power up and before first print out. Do not wait for an attached Serial Monitor!
 #endif
-
     // Just to know which program is running on my Arduino
 #if defined(ESP8266) || defined(ESP32)
     Serial.println();
@@ -110,15 +98,14 @@ void setup() {
 }
 
 void loop() {
-    if (TinyReceiverDecode()) {
-
+    if (TinyIRReceiverData.justWritten) {
+        TinyIRReceiverData.justWritten = false;
 #if !defined(USE_FAST_PROTOCOL)
         // We have no address at FAST protocol
         Serial.print(F("Address=0x"));
         Serial.print(TinyIRReceiverData.Address, HEX);
         Serial.print(' ');
 #endif
-
         Serial.print(F("Command=0x"));
         Serial.print(TinyIRReceiverData.Command, HEX);
         if (TinyIRReceiverData.Flags == IRDATA_FLAGS_IS_REPEAT) {
@@ -126,20 +113,11 @@ void loop() {
         }
         if (TinyIRReceiverData.Flags == IRDATA_FLAGS_PARITY_FAILED) {
             Serial.print(F(" Parity failed"));
-
-#if !defined(USE_EXTENDED_NEC_PROTOCOL) && !defined(USE_ONKYO_PROTOCOL)
-            Serial.print(F(", try USE_EXTENDED_NEC_PROTOCOL or USE_ONKYO_PROTOCOL"));
-#endif
-
         }
         Serial.println();
     }
     /*
      * Put your code here
-     */
-
-    /*
-     * No resume() required :-)
      */
 }
 

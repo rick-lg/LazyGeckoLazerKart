@@ -8,7 +8,7 @@
  ************************************************************************************
  * MIT License
  *
- * Copyright (c) 2020-2025 Armin Joachimsmeyer
+ * Copyright (c) 2020-2023 Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,7 +32,7 @@
 #ifndef _IR_NEC_HPP
 #define _IR_NEC_HPP
 
-#if defined(DEBUG)
+#if defined(DEBUG) && !defined(LOCAL_DEBUG)
 #define LOCAL_DEBUG // IR_DEBUG_PRINT is a real print function here. Add local debug output.
 #else
 //#define LOCAL_DEBUG // This enables debug output only for this file. IR_DEBUG_PRINT is still a void function here.
@@ -71,10 +71,10 @@
  */
 // http://www.hifi-remote.com/wiki/index.php/NEC
 // https://www.sbprojects.net/knowledge/ir/nec.php
-// NEC: LSB first, <start bit><address:16> (or <address:8><inverted address:8>) <command:16><command:8><inverted command:8><stop bit>.
-// ONKYO: like NEC but force to 16 independent address and 16 bit command bits: <start bit><address:16><command:16><stop bit>
+// NEC: LSB first, <start bit><address:16> (or <address:8><inverted address:8>) <command:8><inverted command:8><stop bit>.
+// ONKYO like NEC but 16 independent address and command bits: <start bit><address:16><command:16><stop bit>
 // Standard NEC sends a special fixed repeat frame.
-// NEC2: like NEC, but for repeat, the same full frame is sent after the 110 ms. I have a DVD remote with NEC2.
+// NEC2 sends the same full frame after the 110 ms. I have a DVD remote with NEC2.
 // NEC and NEC 2 only differ in the repeat frames, so the protocol can only be detected correctly after the first repeat.
 // PIONEER (not implemented) is NEC2 with 40 kHz
 //
@@ -115,13 +115,14 @@
 
 #define APPLE_ADDRESS           0x87EE
 
-struct PulseDistanceWidthProtocolConstants const NECProtocolConstants PROGMEM = {NEC, NEC_KHZ, NEC_HEADER_MARK, NEC_HEADER_SPACE, NEC_BIT_MARK,
-    NEC_ONE_SPACE, NEC_BIT_MARK, NEC_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST, (NEC_REPEAT_PERIOD / MICROS_IN_ONE_MILLI),
-    &sendNECSpecialRepeat};
+struct PulseDistanceWidthProtocolConstants NECProtocolConstants =
+        { NEC, NEC_KHZ, NEC_HEADER_MARK, NEC_HEADER_SPACE, NEC_BIT_MARK,
+        NEC_ONE_SPACE, NEC_BIT_MARK, NEC_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST, (NEC_REPEAT_PERIOD / MICROS_IN_ONE_MILLI),
+                &sendNECSpecialRepeat };
 
 // Like NEC but repeats are full frames instead of special NEC repeats
-struct PulseDistanceWidthProtocolConstants const NEC2ProtocolConstants PROGMEM = {NEC2, NEC_KHZ, NEC_HEADER_MARK, NEC_HEADER_SPACE, NEC_BIT_MARK,
-    NEC_ONE_SPACE, NEC_BIT_MARK, NEC_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST, (NEC_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), nullptr};
+struct PulseDistanceWidthProtocolConstants NEC2ProtocolConstants = { NEC2, NEC_KHZ, NEC_HEADER_MARK, NEC_HEADER_SPACE, NEC_BIT_MARK,
+NEC_ONE_SPACE, NEC_BIT_MARK, NEC_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST, (NEC_REPEAT_PERIOD / MICROS_IN_ONE_MILLI), NULL };
 
 /************************************
  * Start of send and decode functions
@@ -149,13 +150,6 @@ void sendNECSpecialRepeat() {
     IrSender.mark(NEC_BIT_MARK);             // + 560
 }
 
-/**
- * Convert 16 bit address and 16 bit command to 32 bit NECRaw data
- * If we get a command < 0x100, we send command and then ~command
- * If we get an address < 0x100, we send 8 bit address and then ~address
- * !!! Be aware, that this is flexible, but makes it impossible to send e.g. 0x0042 as 16 bit value!!!
- * To force send 16 bit address, use: sendOnkyo().
- */
 uint32_t IRsend::computeNECRawDataAndChecksum(uint16_t aAddress, uint16_t aCommand) {
     LongUnion tRawData;
 
@@ -179,30 +173,31 @@ uint32_t IRsend::computeNECRawDataAndChecksum(uint16_t aAddress, uint16_t aComma
  * There is NO delay after the last sent repeat!
  * @param aNumberOfRepeats  If < 0 then only a special NEC repeat frame will be sent by calling NECProtocolConstants.SpecialSendRepeatFunction().
  */
-void IRsend::sendNEC(uint16_t aAddress, uint16_t aCommand, int_fast8_t aNumberOfRepeats) {
-    sendPulseDistanceWidth_P(&NECProtocolConstants, computeNECRawDataAndChecksum(aAddress, aCommand), NEC_BITS, aNumberOfRepeats);
+void IRsend::sendNEC(uint16_t aAddress, uint8_t aCommand, int_fast8_t aNumberOfRepeats) {
+    sendPulseDistanceWidth(&NECProtocolConstants, computeNECRawDataAndChecksum(aAddress, aCommand), NEC_BITS, aNumberOfRepeats);
 }
 
-/**
+/*
+ * NEC2 Send frame and repeat the frame for each requested repeat
+ * There is NO delay after the last sent repeat!
+ * @param aNumberOfRepeats  If < 0 then nothing is sent.
+ */
+void IRsend::sendNEC2(uint16_t aAddress, uint8_t aCommand, int_fast8_t aNumberOfRepeats) {
+    sendPulseDistanceWidth(&NEC2ProtocolConstants, computeNECRawDataAndChecksum(aAddress, aCommand), NEC_BITS, aNumberOfRepeats);
+}
+
+/*
+ * Repeat commands should be sent in a 110 ms raster.
  * There is NO delay after the last sent repeat!
  * @param aNumberOfRepeats  If < 0 then only a special repeat frame without leading and trailing space
  *                          will be sent by calling NECProtocolConstants.SpecialSendRepeatFunction().
  */
 void IRsend::sendOnkyo(uint16_t aAddress, uint16_t aCommand, int_fast8_t aNumberOfRepeats) {
-    sendPulseDistanceWidth_P(&NECProtocolConstants, (uint32_t) aCommand << 16 | aAddress, NEC_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidth(&NECProtocolConstants, (uint32_t) aCommand << 16 | aAddress, NEC_BITS, aNumberOfRepeats);
 }
 
-/**
- * NEC2 Send frame !!! and repeat the frame for each requested repeat !!!
- * There is NO delay after the last sent repeat!
- * @param aNumberOfRepeats  If < 0 then nothing is sent.
- */
-void IRsend::sendNEC2(uint16_t aAddress, uint16_t aCommand, int_fast8_t aNumberOfRepeats) {
-    sendPulseDistanceWidth_P(&NEC2ProtocolConstants, computeNECRawDataAndChecksum(aAddress, aCommand), NEC_BITS, aNumberOfRepeats);
-}
-
-/**
- * Apple: Send NEC with fixed 16 bit Apple address 0x87EE.
+/*
+ * Repeat commands should be sent in a 110 ms raster.
  * There is NO delay after the last sent repeat!
  * https://en.wikipedia.org/wiki/Apple_Remote
  * https://gist.github.com/darconeous/4437f79a34e3b6441628
@@ -219,16 +214,16 @@ void IRsend::sendApple(uint8_t aDeviceId, uint8_t aCommand, int_fast8_t aNumberO
     tRawData.UByte.MidHighByte = aCommand;
     tRawData.UByte.HighByte = aDeviceId; // e.g. 0xD7
 
-    sendPulseDistanceWidth_P(&NECProtocolConstants, tRawData.ULong, NEC_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidth(&NECProtocolConstants, tRawData.ULong, NEC_BITS, aNumberOfRepeats);
 }
 
-/**
+/*
  * Sends NEC protocol
  * @param aNumberOfRepeats  If < 0 then only a special repeat frame without leading and trailing space
  *                          will be sent by calling NECProtocolConstants.SpecialSendRepeatFunction().
  */
 void IRsend::sendNECRaw(uint32_t aRawData, int_fast8_t aNumberOfRepeats) {
-    sendPulseDistanceWidth_P(&NECProtocolConstants, aRawData, NEC_BITS, aNumberOfRepeats);
+    sendPulseDistanceWidth(&NECProtocolConstants, aRawData, NEC_BITS, aNumberOfRepeats);
 }
 
 /**
@@ -277,7 +272,7 @@ bool IRrecv::decodeNEC() {
     }
 
     // Try to decode as NEC protocol
-    if (!decodePulseDistanceWidthData_P(&NECProtocolConstants, NEC_BITS)) {
+    if (!decodePulseDistanceWidthData(&NECProtocolConstants, NEC_BITS)) {
 #if defined(LOCAL_DEBUG)
         Serial.print(F("NEC: "));
         Serial.println(F("Decode failed"));
@@ -379,7 +374,7 @@ bool IRrecv::decodeNECMSB(decode_results *aResults) {
     }
     offset++;
 
-    if (!decodePulseDistanceWidthData(NEC_BITS, offset, NEC_BIT_MARK, NEC_ONE_SPACE, 0, PROTOCOL_IS_MSB_FIRST)) {
+    if (!decodePulseDistanceWidthData(NEC_BITS, offset, NEC_BIT_MARK, 0, NEC_ONE_SPACE, NEC_ZERO_SPACE, PROTOCOL_IS_MSB_FIRST)) {
 #if defined(LOCAL_DEBUG)
         Serial.print(F("NEC MSB: "));
         Serial.println(F("Decode failed"));

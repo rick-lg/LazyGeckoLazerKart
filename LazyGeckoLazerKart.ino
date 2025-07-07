@@ -20,7 +20,8 @@
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols
 #include <Arduino.h>
 #include <LazyGeckoLazerKart.h>
-
+#include <LGdevice_type.h>
+#include <LGdevice_type.h>
 
 //OTA=========================
 #include <WiFi.h>
@@ -365,9 +366,10 @@ void handleUpload() {
 }
 
 //Uncomment one of these
+//Handled for Bulk building
 //#define LASER_ACTIVATED_ADLIAS_BLOWER_GUN (1)
 //#define LASER_ACTIVATED_FOG_GUN (1)
-#define LASER_ACTIVATED_WATER_GUN (1)
+//#define LASER_ACTIVATED_WATER_GUN (1)
 //#define LASER_ACTIVATED_BUBBLE_GUN (1)
 //#define LASER_ACTIVATED_EAGLE_GUN  (1)
 //#define LASER_ACTIVATED_GOKART_GUN (1)

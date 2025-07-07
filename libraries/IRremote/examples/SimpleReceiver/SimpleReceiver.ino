@@ -9,7 +9,7 @@
  ************************************************************************************
  * MIT License
  *
- * Copyright (c) 2020-2025 Armin Joachimsmeyer
+ * Copyright (c) 2020-2023 Armin Joachimsmeyer
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,8 +31,6 @@
  ************************************************************************************
  */
 
-#include <Arduino.h>
-
 /*
  * Specify which protocol(s) should be used for decoding.
  * If no protocol is defined, all protocols (except Bang&Olufsen) are active.
@@ -43,7 +41,7 @@
 //#define DECODE_KASEIKYO
 //#define DECODE_PANASONIC    // alias for DECODE_KASEIKYO
 //#define DECODE_LG
-//#define DECODE_NEC          // Includes Apple and Onkyo. To enable all protocols , just comment/disable this line.
+#define DECODE_NEC          // Includes Apple and Onkyo. To enable all protocols , just comment/disable this line.
 //#define DECODE_SAMSUNG
 //#define DECODE_SONY
 //#define DECODE_RC5
@@ -62,7 +60,9 @@
 
 //#define DEBUG               // Activate this for lots of lovely debug output from the decoders.
 
-//#define RAW_BUFFER_LENGTH  750 // For air condition remotes it may require up to 750. Default is 200.
+//#define RAW_BUFFER_LENGTH  180  // Default is 112 if DECODE_MAGIQUEST is enabled, otherwise 100.
+
+#include <Arduino.h>
 
 /*
  * This include defines the actual pin number for pins like IR_RECEIVE_PIN, IR_SEND_PIN for many different boards and architectures
@@ -72,7 +72,6 @@
 
 void setup() {
     Serial.begin(115200);
-
     // Just to know which program is running on my Arduino
     Serial.println(F("START " __FILE__ " from " __DATE__ "\r\nUsing library version " VERSION_IRREMOTE));
 
@@ -102,11 +101,9 @@ void loop() {
             Serial.println(F("Received noise or an unknown (or not yet enabled) protocol"));
             // We have an unknown protocol here, print extended info
             IrReceiver.printIRResultRawFormatted(&Serial, true);
-
             IrReceiver.resume(); // Do it here, to preserve raw data for printing with printIRResultRawFormatted()
         } else {
             IrReceiver.resume(); // Early enable receiving of the next IR frame
-
             IrReceiver.printIRResultShort(&Serial);
             IrReceiver.printIRSendUsage(&Serial);
         }
@@ -115,16 +112,10 @@ void loop() {
         /*
          * Finally, check the received data and perform actions according to the received command
          */
-        if (IrReceiver.decodedIRData.flags & IRDATA_FLAGS_IS_REPEAT) {
-            Serial.println(F("Repeat received. Here you can repeat the same action as before."));
-        } else {
-            if (IrReceiver.decodedIRData.command == 0x10) {
-                Serial.println(F("Received command 0x10."));
-                // do something
-            } else if (IrReceiver.decodedIRData.command == 0x11) {
-                Serial.println(F("Received command 0x11."));
-                // do something else
-            }
+        if (IrReceiver.decodedIRData.command == 0x10) {
+            // do something
+        } else if (IrReceiver.decodedIRData.command == 0x11) {
+            // do something else
         }
     }
 }

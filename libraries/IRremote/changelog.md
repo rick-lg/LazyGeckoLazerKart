@@ -1,44 +1,6 @@
 # Changelog
 The latest version may not be released!
 See also the commit log at github: https://github.com/Arduino-IRremote/Arduino-IRremote/commits/master
-# 4.4.3
-- Added USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN to make the software aware of reverse external connection.
-
-# 4.4.2
-- Support for SAMD51 timer3 if timer 5 is not available (Adafruit ItsyBitsy M4).
-- attachInterrupt() on SAMD has a different semantic :-(. See: https://www.arduino.cc/reference/tr/language/functions/external-interrupts/attachinterrupt/.
-- Fixed overflow handling.
-- Improved repeat detection for DistanceWidthProtocol.
-- Print of IR frame duration in printIRResultShort();
-- PulseDistanceWidthProtocolConstants now in PROGMEM, this saves 190 bytes RAM for unit test.
-- Support for PROGMEM PulseDistanceWidthProtocol data.
-- Support duplicated 8 bit address for sendSamsungLG().
-
-# 4.4.1
-- Support for ESP core 3.x by akellai.
-- restartTimer() now uses variable sMicrosAtLastStopTimer to keep track of uncounted ticks between stopTimer() and restartTimer().
-- Removed functions addTicksToInternalTickCounter() and addMicrosToInternalTickCounter(), which were added in 4.1.0.
-- Version 2.2.0 of TinyIR with new TinyReceiverDecode() function to be used as drop in for IrReceiver.decode().
-- Support of RC6A.
-
-# 4.4.0
-- Using 8 bit raw timing buffer for all timings except frame gap (former rawbuf[0]).
-- Renamed decodedIRData.initialGap to decodedIRData.initialGapTicks.
-- sendNEC() and sendNEC2() now accepts 16 bit command to better map to NECext protocol found in IRDB databases.
-- ir_DistanceWidthProtocol() now decodes up to 10 ms mark or spaces if RAM is bigger than 2 k.
-- Improved sensitivity and decoding of PULSE_DISTANCE + PULSE_WIDTH protocols.
-- Changed TOLERANCE_FOR_DECODERS_MARK_OR_SPACE_MATCHING to TOLERANCE_FOR_DECODERS_MARK_OR_SPACE_MATCHING_PERCENT.
-- Improved examples AllProtocolsOnLCD, UnitTest and SimpleReceiver.
-- New functions decodePulseDistanceWidthData() with 6 parameters and decodePulseDistanceWidthDataStrict() with 7 parameters.
-
-# 4.3.2
-- Added sendSonyMSB(unsigned long data, int nbits) as a clone of sendSony(unsigned long data, int nbits) to be more consistent.
-- Added sendSamsungMSB(unsigned long data, int nbits) as a clone of sendSAMSUNG(unsigned long data, int nbits) to be more consistent.
-- Added ESP32 core 3.x error message.
-
-# 4.3.1
- - Fixed overflow bug for rawlen > 254.
- - Removed deprecated sendPulseDistance... functions with parameter aSendStopBit.
 
 # 4.3.0
 - Removed default value USE_DEFAULT_FEEDBACK_LED_PIN for last parameter of IRsend::begin(bool aEnableLEDFeedback, uint_fast8_t aFeedbackLEDPin).
@@ -69,14 +31,14 @@ See also the commit log at github: https://github.com/Arduino-IRremote/Arduino-I
 - Usage of ATTinyCore pin numbering scheme e.g. PIN_PB2.
 - Added ARDUINO_ARCH_NRF52 to support Seeed XIAO nRF52840 Sense.
 - First untested support of Uno R4.
-- Extracted version macros to IRVersion.h.
+- Extraced version macros to IRVersion.h.
 
 ## 4.1.2
 - Workaround for ESP32 RTOS delay() timing bug influencing the mark() function.
 
 ## 4.1.1
 - SAMD51 use timer3 if timer5 not available.
-- Disabled #define LOCAL_DEBUG in IRReceive.hpp, which was accidentally enabled at 4.1.0.
+- Disabled #define LOCAL_DEBUG in IRReceive.hpp, which was accidently enabled at 4.1.0.
 
 ## 4.1.0
 - Fixed bug in printing durations > 64535 in printIRResultRawFormatted().
@@ -103,7 +65,7 @@ See also the commit log at github: https://github.com/Arduino-IRremote/Arduino-I
 - Introduced common structure PulseDistanceWidthProtocolConstants.
 - Where possible, changed all send and decode functions to use PulseDistanceWidthProtocolConstants.
 - Improved MSB/LSB handling
-- New convenience functions bitreverse32Bit() and bitreverseOneByte().
+- New convenience fuctions bitreverse32Bit() and bitreverseOneByte().
 - Improved Magiquest protocol.
 - Fix for #1028 - Prevent long delay caused by overflow when frame duration < repeat period - Thanks to Stephen Humphries!
 - Support for ATtiny816 - Thanks to elockman.
@@ -147,7 +109,7 @@ See also the commit log at github: https://github.com/Arduino-IRremote/Arduino-I
 - Improved pin mapping for TinyReceiver.
 
 ## 3.7.1
-- SendRaw now supports buffer length > 255.
+- SendRaw now supports bufferlenght > 255.
 - Improved DistanceProtocol decoder output.
 - Fixed ESP32 send bug for 2.x ESP32 cores.
 
@@ -315,7 +277,7 @@ See also the commit log at github: https://github.com/Arduino-IRremote/Arduino-I
 - Corrected keywords.txt.
 - BoseWave protocol added PR #690.
 - Formatting comply to the new stylesheet.
-- Renamed "boarddefs.h".
+- Renamed "boarddefs.h" [ISSUE #375](https://github.com/Arduino-IRremote/Arduino-IRremote/issues/375).
 - Renamed `SEND_PIN` to `IR_SEND_PIN`.
 - Renamed state macros.
 - Enabled `DUTY_CYCLE` for send signal.
@@ -382,7 +344,7 @@ Changes from #268 by adamlhumphreys
 - Fixed #110 Mess
 - Created Gitter Room
 - Added Gitter Badge
-- Standardized Code Base
+- Standardised Code Base
 - Clean Debug Output
 - Optimized Send Loops
 - Modularized Design

@@ -45,7 +45,6 @@
 // from LEGO Power Functions RC Manual 26.02.2010 Version 1.20
 // https://github.com/jurriaan/Arduino-PowerFunctions/raw/master/LEGO_Power_Functions_RC_v120.pdf
 // https://oberguru.net/elektronik/ir/codes/lego_power_functions_train.lircd.conf
-// For original LEGO receiver see: https://www.philohome.com/pfrec/pfrec.htm and https://www.youtube.com/watch?v=KCM4Ug1bPrM
 //
 // To ensure correct detection of IR messages six 38 kHz cycles are transmitted as mark.
 // Low bit consists of 6 cycles of IR and 10 �cycles� of pause,
@@ -83,9 +82,9 @@
 #define LEGO_MODE_COMBO     1
 #define LEGO_MODE_SINGLE    0x4 // here the 2 LSB have meanings like Output A / Output B
 
-struct PulseDistanceWidthProtocolConstants LegoProtocolConstants = { LEGO_PF, 38, LEGO_HEADER_MARK, LEGO_HEADER_SPACE,
-LEGO_BIT_MARK, LEGO_ONE_SPACE, LEGO_BIT_MARK, LEGO_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST, (LEGO_AUTO_REPEAT_PERIOD_MIN
-        / MICROS_IN_ONE_MILLI), nullptr };
+struct PulseDistanceWidthProtocolConstants LegoProtocolConstants = { LEGO_PF, 38, LEGO_HEADER_MARK, LEGO_HEADER_SPACE, LEGO_BIT_MARK,
+LEGO_ONE_SPACE, LEGO_BIT_MARK, LEGO_ZERO_SPACE, PROTOCOL_IS_LSB_FIRST, (LEGO_AUTO_REPEAT_PERIOD_MIN
+        / MICROS_IN_ONE_MILLI), NULL };
 
 /************************************
  * Start of send and decode functions
@@ -132,7 +131,7 @@ bool IRrecv::decodeLegoPowerFunctions() {
     }
 
     // Check we have enough data - +4 for initial gap, start bit mark and space + stop bit mark
-    if (decodedIRData.rawlen != (2 * LEGO_BITS) + 4) {
+    if (decodedIRData.rawDataPtr->rawlen != (2 * LEGO_BITS) + 4) {
         IR_DEBUG_PRINT(F("LEGO: "));
         IR_DEBUG_PRINT(F("Data length="));
         IR_DEBUG_PRINT(decodedIRData.rawDataPtr->rawlen);
@@ -187,7 +186,7 @@ bool IRrecv::decodeLegoPowerFunctions() {
     /*
      * Check for autorepeat (should happen 4 times for one press)
      */
-    if (decodedIRData.initialGapTicks < (LEGO_AUTO_REPEAT_PERIOD_MAX / MICROS_PER_TICK)) {
+    if (decodedIRData.initialGap < (LEGO_AUTO_REPEAT_PERIOD_MAX / MICROS_PER_TICK)) {
         decodedIRData.flags |= IRDATA_FLAGS_IS_AUTO_REPEAT;
     }
     decodedIRData.address = tToggleEscapeChannel;

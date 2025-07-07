@@ -44,30 +44,21 @@
 /*
  * Functions declared here
  */
-void timerConfigForReceive();           // Initialization of 50 us timer, interrupts are still disabled
-void timerEnableReceiveInterrupt();     // Enable interrupts of an initialized timer
-void timerDisableReceiveInterrupt();    // Disable interrupts of an initialized timer
-void timerResetInterruptPending();      // ISR helper function for some architectures, which require a manual reset
-// of the pending interrupt (TIMER_REQUIRES_RESET_INTR_PENDING is defined). Otherwise empty.
+void timerResetInterruptPending();
+void timerEnableReceiveInterrupt();
+void timerDisableReceiveInterrupt();
+void timerConfigForReceive();
+void enableSendPWMByTimer();
+void disableSendPWMByTimer();
+void timerConfigForSend(uint16_t aFrequencyKHz);
 
-void timerConfigForSend(uint16_t aFrequencyKHz); // Initialization of timer hardware generated PWM, if defined(SEND_PWM_BY_TIMER)
-void enableSendPWMByTimer();            // Switch on PWM generation
-void disableSendPWMByTimer();           // Switch off PWM generation
-
-// SEND_PWM_BY_TIMER for different architectures is enabled / defined at IRremote.hpp line 195.
+// SEND_PWM_BY_TIMER is defined in IRremote.hpp line 195.
 #if  defined(SEND_PWM_BY_TIMER) && ( (defined(ESP32) || defined(ARDUINO_ARCH_RP2040) || defined(PARTICLE)) || defined(ARDUINO_ARCH_MBED) )
 #define SEND_PWM_DOES_NOT_USE_RECEIVE_TIMER // Receive timer and send generation timer are independent here.
 #endif
 
 #if defined(IR_SEND_PIN) && defined(SEND_PWM_BY_TIMER) && !defined(SEND_PWM_DOES_NOT_USE_RECEIVE_TIMER) // For ESP32 etc. IR_SEND_PIN definition is useful
 #undef IR_SEND_PIN // To avoid "warning: "IR_SEND_PIN" redefined". The user warning is done at IRremote.hpp line 202.
-#endif
-
-#if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-// Use the inverse value, so same code should work for active Low output
-#define IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH   (100 - IR_SEND_DUTY_CYCLE_PERCENT)
-#else
-#define IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH   IR_SEND_DUTY_CYCLE_PERCENT
 #endif
 
 // Macros for enabling timers for development
@@ -126,7 +117,7 @@ void timerDisableReceiveInterrupt() {
 
 /**
  * IF PWM should be generated not by software, but by a timer, this function sets output pin mode,
- * configures the timer for generating a PWM with HIGH output level of duty cycle of IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH
+ * configures the timer for generating a PWM with duty cycle of IR_SEND_DUTY_CYCLE_PERCENT
  * and disables the receive interrupt if it uses the same resource.
  * For most architectures, the pin number(s) which can be used for output is determined by the timer used!
  * The output of the PWM signal is controlled by enableSendPWMByTimer() and disableSendPWMByTimer().
@@ -203,7 +194,7 @@ void disableSendPWMByTimer() {
 // ATtiny84
 #elif defined(__AVR_ATtiny84__) || defined(__AVR_ATtiny88__)
 #  if !defined(IR_USE_AVR_TIMER1)
-#define IR_USE_AVR_TIMER1     // send pin = pin 6, no tone() available when using ATTinyCore
+#define IR_USE_AVR_TIMER1     // send pin = pin 6
 #  endif
 
 #elif  defined(__AVR_ATtiny87__) || defined(__AVR_ATtiny167__)
@@ -346,7 +337,6 @@ void timerConfigForReceive() {
 }
 
 #  if defined(SEND_PWM_BY_TIMER)
-// Set IR_SEND_PIN depending on CPU
 #    if defined(CORE_OC1A_PIN)
 #define IR_SEND_PIN  CORE_OC1A_PIN  // Teensy
 
@@ -387,9 +377,9 @@ void timerConfigForReceive() {
 //#define IR_SEND_PIN  PIN_PB6 // OC1AX / PB6 / Pin14 at ATTinyCore
 #      endif
 
-#    else // defined(__AVR_ATtiny87__) || defined(__AVR_ATtiny167__)
+#    else
 #define IR_SEND_PIN  9              // OC1A Arduino Duemilanove, Diecimila, LilyPad, Sparkfun Pro Micro, Leonardo, MH-ET Tiny88 etc.
-#    endif // Set IR_SEND_PIN depending on CPU
+#    endif // defined(CORE_OC1A_PIN)
 
 #    if defined(__AVR_ATtiny87__) || defined(__AVR_ATtiny167__)
 // Clear OC1A/OC1B on Compare Match when up-counting. Set OC1A/OC1B on Compare Match when down counting.
@@ -403,31 +393,20 @@ void enableSendPWMByTimer() {
     //TCNT1 = 0;  TCCR1A |= _BV(COM1B1); TCCR1D |= _BV(OC1BX); // + enable OC1BX as output
 }
 #      else
-void enableSendPWMByTimer() {
+void disableSendPWMByTimer() {
     TCNT1 = 0;
     TCCR1A |= _BV(COM1A1);
-    TCCR1D |= _BV(OC1AU); // + enable OC1AU as output
+    TCCR1D |= _BV(OC1AU); // + enable OC1BU as output
     //TCNT1 = 0;  TCCR1A |= _BV(COM1A1); TCCR1D |= _BV(OC1AV); // + enable OC1BV as output
     //TCNT1 = 0;  TCCR1A |= _BV(COM1A1); TCCR1D |= _BV(OC1AW); // + enable OC1BW as output
     //TCNT1 = 0;  TCCR1A |= _BV(COM1A1); TCCR1D |= _BV(OC1AX); // + enable OC1BX as output
 }
-#      endif // defined(USE_TIMER_CHANNEL_B)
 
+#      endif
 void disableSendPWMByTimer() {
     TCCR1D = 0;
-#      if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#        if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#        else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#        endif // defined(IR_SEND_PIN)
-#      endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
-#    else // defined(__AVR_ATtiny87__) || defined(__AVR_ATtiny167__)
+#    else
 #      if defined(USE_TIMER_CHANNEL_B)
 void enableSendPWMByTimer() {
     TCNT1 = 0;
@@ -435,40 +414,17 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR1A &= ~(_BV(COM1B1));
-#        if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#          if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#          else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#          endif // defined(IR_SEND_PIN)
-#        endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
-#      else // defined(USE_TIMER_CHANNEL_B)
+#      else
 void enableSendPWMByTimer() {
     TCNT1 = 0;
     TCCR1A |= _BV(COM1A1); // Clear OC1A/OC1B on Compare Match when up-counting. Set OC1A/OC1B on Compare Match when downcounting.
 }
 void disableSendPWMByTimer() {
     TCCR1A &= ~(_BV(COM1A1));
-#        if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#          if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#          else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#          endif // defined(IR_SEND_PIN)
-#        endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
-#      endif // defined(USE_TIMER_CHANNEL_B)
-
-#    endif // defined(__AVR_ATtiny87__) || defined(__AVR_ATtiny167__)
+#      endif
+#    endif
 
 /*
  * timerConfigForSend() is used exclusively by IRsend::enableIROut()
@@ -477,31 +433,31 @@ void disableSendPWMByTimer() {
 void timerConfigForSend(uint16_t aFrequencyKHz) {
     timerDisableReceiveInterrupt();
 
-#    if (((F_CPU / 2000) / 38) < 256)
+#  if (((F_CPU / 2000) / 38) < 256)
     const uint16_t tPWMWrapValue = (F_CPU / 2000) / (aFrequencyKHz); // 210,52 for 38 kHz @16 MHz clock, 2000 instead of 1000 because of Phase Correct PWM
     TCCR1A = _BV(WGM11); // PWM, Phase Correct, Top is ICR1
     TCCR1B = _BV(WGM13) | _BV(CS10); // CS10 -> no prescaling
     ICR1 = tPWMWrapValue - 1;
-#      if defined(USE_TIMER_CHANNEL_B)
-    OCR1B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
-#      else
-    OCR1A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
-#      endif
-    TCNT1 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
+#    if defined(USE_TIMER_CHANNEL_B)
+    OCR1B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
 #    else
+    OCR1A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
+#    endif
+    TCNT1 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
+#  else
     const uint16_t tPWMWrapValue = ((F_CPU / 8) / 2000) / (aFrequencyKHz); // 2000 instead of 1000 because of Phase Correct PWM
     TCCR1A = _BV(WGM11);// PWM, Phase Correct, Top is ICR1
     TCCR1B = _BV(WGM13) | _BV(CS11);// CS11 -> Prescaling by 8
     ICR1 = tPWMWrapValue - 1;
-#      if defined(USE_TIMER_CHANNEL_B)
-    OCR1A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
-#      else
-    OCR1A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
-#      endif
+#    if defined(USE_TIMER_CHANNEL_B)
+    OCR1A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
+#    else
+    OCR1A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
+#    endif
     TCNT1 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
-#    endif // if (((F_CPU / 2000) / 38) < 256)
+#  endif
 }
-#  endif // defined(SEND_PWM_BY_TIMER) - Timer1
+#  endif // defined(SEND_PWM_BY_TIMER)
 
 /*
  * AVR Timer2 (8 bits) // Tone timer on Uno
@@ -515,6 +471,7 @@ void timerDisableReceiveInterrupt() {
     TIMSK2 = 0;
 }
 #define TIMER_INTR_NAME             TIMER2_COMPB_vect                   // We use TIMER2_COMPB_vect to be compatible with tone() library
+
 #define TIMER_COUNT_TOP  (F_CPU * MICROS_PER_TICK / MICROS_IN_ONE_SECOND)
 
 void timerConfigForReceive() {
@@ -534,7 +491,6 @@ void timerConfigForReceive() {
 }
 
 #  if defined(SEND_PWM_BY_TIMER)
-// Set IR_SEND_PIN depending on CPU
 #    if defined(CORE_OC2B_PIN)
 #define IR_SEND_PIN  CORE_OC2B_PIN  // Teensy
 
@@ -549,13 +505,8 @@ void timerConfigForReceive() {
 #define IR_SEND_PIN  14             // MightyCore, MegaCore
 
 #    else
-/*
- * Using pin 11 / PB3 / OC2A for this purpose is NOT possible, since we need a PWM with a selectable frequency.
- * This is only possible by using Phase Correct with Top as OCR2A.
- * Thus the OCR2A register cannot be used for comparing for channel A and TOP with OCR2B is not supported by Hardware :-(.
- */
-#define IR_SEND_PIN  3              // Arduino Uno Pin PD3, Duemilanove, Diecimila, LilyPad, etc
-#    endif // Set IR_SEND_PIN depending on CPU
+#define IR_SEND_PIN  3              // Arduino Duemilanove, Diecimila, LilyPad, etc
+#    endif // defined(CORE_OC2B_PIN)
 
 void enableSendPWMByTimer() {
     TCNT2 = 0;
@@ -563,17 +514,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR2A &= ~(_BV(COM2B1));      // Normal port operation, OC2B disconnected.
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 /*
@@ -593,14 +533,14 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
     TCCR2A = _BV(WGM20); // PWM, Phase Correct, Top is OCR2A
     TCCR2B = _BV(WGM22) | _BV(CS20); // CS20 -> no prescaling
     OCR2A = tPWMWrapValue - 1; // The top value for the timer.  The modulation frequency will be F_CPU / 2 / (OCR2A + 1).
-    OCR2B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR2B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT2 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
 #  else
     const uint16_t tPWMWrapValue = ((F_CPU / 8) / 2000) / (aFrequencyKHz); // 2000 instead of 1000 because of Phase Correct PWM
     TCCR2A = _BV(WGM20);// PWM, Phase Correct, Top is OCR2A
     TCCR2B = _BV(WGM22) | _BV(CS21);// CS21 -> Prescaling by 8
     OCR2A = tPWMWrapValue - 1;
-    OCR2B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR2B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT2 = 0;// not really required, since we have an 8 bit counter, but makes the signal more reproducible
 #  endif
 }
@@ -628,7 +568,6 @@ void timerConfigForReceive() {
 }
 
 #  if defined(SEND_PWM_BY_TIMER)
-// Set IR_SEND_PIN depending on CPU
 #    if defined(CORE_OC3A_PIN)
 #define IR_SEND_PIN  CORE_OC3A_PIN  // Teensy
 
@@ -641,7 +580,7 @@ void timerConfigForReceive() {
 
 #    else
 #error Please add OC3A pin number here
-#    endif // Set IR_SEND_PIN depending on CPU
+#    endif
 
 void enableSendPWMByTimer() {
     TCNT3 = 0;
@@ -649,17 +588,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR3A &= ~(_BV(COM3A1));
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 /*
@@ -667,16 +595,16 @@ void disableSendPWMByTimer() {
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
 void timerConfigForSend(uint16_t aFrequencyKHz) {
-#    if F_CPU > 16000000
+#if F_CPU > 16000000
 #error "Creating timer PWM with timer 3 is not supported for F_CPU > 16 MHz"
-#    endif
+#endif
     timerDisableReceiveInterrupt();
 
     const uint16_t tPWMWrapValue = (F_CPU / 2000) / (aFrequencyKHz); // 210,52 for 38 kHz @16 MHz clock, 2000 instead of 1000 because of Phase Correct PWM
     TCCR3A = _BV(WGM31);
     TCCR3B = _BV(WGM33) | _BV(CS30); // PWM, Phase Correct, ICRn as TOP, complete period is double of tPWMWrapValue
     ICR3 = tPWMWrapValue - 1;
-    OCR3A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR3A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT3 = 0; // required, since we have an 16 bit counter
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
@@ -701,7 +629,6 @@ void timerConfigForReceive() {
 }
 
 #  if defined(SEND_PWM_BY_TIMER)
-// Set IR_SEND_PIN depending on CPU
 #    if defined(CORE_OC4A_PIN)
 #define IR_SEND_PIN  CORE_OC4A_PIN
 #    elif defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -716,29 +643,18 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR4A &= ~(_BV(COM4A1));
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 void timerConfigForSend(uint16_t aFrequencyKHz) {
-#    if F_CPU > 16000000
+#if F_CPU > 16000000
 #error "Creating timer PWM with timer 4 is not supported for F_CPU > 16 MHz"
-#    endif
+#endif
     timerDisableReceiveInterrupt();
     const uint16_t tPWMWrapValue = (F_CPU / 2000) / (aFrequencyKHz); // 210,52 for 38 kHz @16 MHz clock, 2000 instead of 1000 because of Phase Correct PWM
     TCCR4A = _BV(WGM41);
     TCCR4B = _BV(WGM43) | _BV(CS40);
     ICR4 = tPWMWrapValue - 1;
-    OCR4A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR4A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT4 = 0; // required, since we have an 16 bit counter
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
@@ -786,17 +702,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR4A &= ~(_BV(COM4A0));  // (Pro Micro does not map PC7 (32/ICP3/CLK0/OC4A)
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 // of ATmega32U4 )
 #    else
@@ -807,17 +712,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR4A &= ~(_BV(COM4A1));
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 #    endif
 
@@ -839,8 +733,8 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
     TCCR4E = 0;
     TC4H = tPWMWrapValue >> 8;
     OCR4C = tPWMWrapValue;
-    TC4H = (tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH / 100) >> 8;
-    OCR4A = (tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH / 100) & 255;
+    TC4H = (tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT / 100) >> 8;
+    OCR4A = (tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT / 100) & 255;
     TCNT4 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
@@ -880,17 +774,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR5A &= ~(_BV(COM5A1));
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 /*
@@ -907,7 +790,7 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
     TCCR5A = _BV(WGM51);
     TCCR5B = _BV(WGM53) | _BV(CS50);
     ICR5 = tPWMWrapValue - 1;
-    OCR5A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR5A = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT5 = 0; // required, since we have an 16 bit counter
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
@@ -950,17 +833,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCCR0A &= ~(_BV(COM0B1));
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 /*
@@ -968,16 +840,16 @@ void disableSendPWMByTimer() {
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
 void timerConfigForSend(uint16_t aFrequencyKHz) {
-#    if F_CPU > 16000000
+#if F_CPU > 16000000
 #error "Creating timer PWM with timer TINY0 is not supported for F_CPU > 16 MHz"
-#    endif
+#endif
     timerDisableReceiveInterrupt();
 
     const uint16_t tPWMWrapValue = (F_CPU / 2000) / (aFrequencyKHz); // 210,52 for 38 kHz @16 MHz clock, 2000 instead of 1000 because of Phase Correct PWM
     TCCR0A = _BV(WGM00); // PWM, Phase Correct, Top is OCR0A
     TCCR0B = _BV(WGM02) | _BV(CS00); // CS00 -> no prescaling
     OCR0A = tPWMWrapValue - 1;
-    OCR0B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR0B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT0 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
@@ -1020,17 +892,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     GTCCR &= ~(_BV(PWM1B) | _BV(COM1B0));
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 /*
@@ -1044,14 +905,14 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
     const uint16_t tPWMWrapValue = (F_CPU / 1000) / (aFrequencyKHz); // 421 @16 MHz, 26 @1 MHz and 38 kHz
     TCCR1 = _BV(CTC1) | _BV(CS10);// CTC1 = 1: TOP value set to OCR1C, CS10 No Prescaling
     OCR1C = tPWMWrapValue - 1;
-    OCR1B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR1B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT1 = 0;// not really required, since we have an 8 bit counter, but makes the signal more reproducible
     GTCCR = _BV(PWM1B) | _BV(COM1B0);// PWM1B = 1: Enable PWM for OCR1B, COM1B0 Clear on compare match
 #  else
     const uint16_t tPWMWrapValue = ((F_CPU / 2) / 1000) / (aFrequencyKHz); // 210 for 16 MHz and 38 kHz
     TCCR1 = _BV(CTC1) | _BV(CS11); // CTC1 = 1: TOP value set to OCR1C, CS11 Prescaling by 2
     OCR1C = tPWMWrapValue - 1;
-    OCR1B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1;
+    OCR1B = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1;
     TCNT1 = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
     GTCCR = _BV(PWM1B) | _BV(COM1B0); // PWM1B = 1: Enable PWM for OCR1B, COM1B0 Clear on compare match
 #  endif
@@ -1127,17 +988,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCB0.CTRLB &= ~(TCB_CCMPEN_bm);
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 /*
@@ -1154,7 +1004,7 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
     const uint16_t tPWMWrapValue = (F_CPU / 2000) / (aFrequencyKHz); // 210,52 for 38 kHz @16 MHz clock, 2000 instead of 1000 because of using CLK / 2
     TCB0.CTRLB = TCB_CNTMODE_PWM8_gc; // 8 bit PWM mode
     TCB0.CCMPL = tPWMWrapValue - 1; // Period of 8 bit PWM
-    TCB0.CCMPH = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1; // Duty cycle of waveform of 8 bit PWM
+    TCB0.CCMPH = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1; // Duty cycle of waveform of 8 bit PWM
     TCB0.CTRLA = (TCB_CLKSEL_CLKDIV2_gc) | (TCB_ENABLE_bm); // use CLK / 2
     TCB0.CNT = 0; // not really required, since we have an 8 bit counter, but makes the signal more reproducible
 }
@@ -1207,17 +1057,6 @@ void enableSendPWMByTimer() {
 }
 void disableSendPWMByTimer() {
     TCD0.CTRLA = 0; // do not disable output, disable complete timer
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-#      if defined(IR_SEND_PIN)
-    digitalWriteFast(IR_SEND_PIN, HIGH);
-#      else
-    if (__builtin_constant_p(sendPin)) {
-        digitalWriteFast(sendPin, HIGH);
-    } else {
-        digitalWrite(sendPin, HIGH);
-    }
-#      endif // defined(IR_SEND_PIN)
-#    endif // defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
 }
 
 /*
@@ -1238,7 +1077,7 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
 
     // Generate duty cycle signal for debugging etc.
     TCD0.CMPASET = 0;
-    TCD0.CMPACLR = (tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH / 100) - 1;        // duty cycle for WOA
+    TCD0.CMPACLR = (tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT / 100) - 1;        // duty cycle for WOA
 
     TCD0.INTFLAGS = TCD_OVF_bm;        // reset interrupt flags
     TCD0.INTCTRL = TCD_OVF_bm;        // overflow interrupt
@@ -1558,9 +1397,6 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
 
-/**********************************************************
- * ESP8266 boards
- **********************************************************/
 #elif defined(ESP8266)
 #  if defined(SEND_PWM_BY_TIMER)
 #error "No support for hardware PWM generation for ESP8266"
@@ -1575,7 +1411,7 @@ void timerEnableReceiveInterrupt() {
     timer1_attachInterrupt(&IRReceiveTimerInterruptHandler); // enables interrupt too
 }
 void timerDisableReceiveInterrupt() {
-    timer1_detachInterrupt(); // disables interrupt too
+    timer1_detachInterrupt(); // disables interrupt too }
 }
 
 void timerConfigForReceive() {
@@ -1595,114 +1431,75 @@ void timerConfigForReceive() {
  * so it is recommended to always define SEND_PWM_BY_TIMER
  **********************************************************/
 #elif defined(ESP32)
-#  if !defined(ESP_ARDUINO_VERSION)
-#define ESP_ARDUINO_VERSION 0x010101 // Version 1.1.1
-#  endif
-
 // Variables specific to the ESP32.
 // the ledc functions behave like hardware timers for us :-), so we do not require our own soft PWM generation code.
-hw_timer_t *s50usTimer = nullptr; // set by timerConfigForReceive()
-#define _IRREMOTE_ESP32_LEDC_RESOLUTION 8
-#define _IRREMOTE_ESP32_LEDC_RESOLUTION_MAX_PWM_VALUE 255
+hw_timer_t *s50usTimer = NULL; // set by timerConfigForReceive()
 
-//#  if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0) && !defined(SEND_LEDC_CHANNEL)
-#  if ESP_ARDUINO_VERSION < (3 << 16 + 0 >> 8 + 0) && !defined(SEND_LEDC_CHANNEL)
-#define SEND_LEDC_CHANNEL 0 // The channel used for PWM 0 to 7 are high speed PWM channels
+#  if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0) &&  !defined(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL)
+#define SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL 0 // The channel used for PWM 0 to 7 are high speed PWM channels
 #  endif
 
 void timerEnableReceiveInterrupt() {
-//#  if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-#  if ESP_ARDUINO_VERSION >= (3 << 16 + 0 >> 8 + 0)
-    timerStart(s50usTimer);
-#  else
     timerAlarmEnable(s50usTimer);
-#  endif
 }
 
-//#  if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(2, 0, 2)
-#  if ESP_ARDUINO_VERSION < (2 << 16 + 0 >> 8 + 2)
-/*
- * Special support for ESP core < 202
- */
+#if !defined(ESP_ARDUINO_VERSION)
+#define ESP_ARDUINO_VERSION 0
+#endif
+#if !defined(ESP_ARDUINO_VERSION_VAL)
+#define ESP_ARDUINO_VERSION_VAL(major, minor, patch) 202
+#endif
+#if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(2, 0, 2)
 void timerDisableReceiveInterrupt() {
-    if (s50usTimer != nullptr) {
+    if (s50usTimer != NULL) {
         timerDetachInterrupt(s50usTimer);
         timerEnd(s50usTimer);
     }
 }
-#  else
-
+#else
 void timerDisableReceiveInterrupt() {
-    if (s50usTimer != nullptr) {
-//#  if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-#  if ESP_ARDUINO_VERSION >= (3 << 16 + 0 >> 8 + 0)
-        timerStop(s50usTimer);
-#    else
+    if (s50usTimer != NULL) {
         timerAlarmDisable(s50usTimer);
-#    endif
     }
 }
-#  endif
+#endif
 
 // Undefine ISR, because we register/call the plain function IRReceiveTimerInterruptHandler()
 #  if defined(ISR)
 #undef ISR
 #  endif
 
-#  if !defined(DISABLE_CODE_FOR_RECEIVER) // Otherwise the &IRReceiveTimerInterruptHandler is referenced, but not available
+#  if !defined(DISABLE_CODE_FOR_RECEIVER) // &IRReceiveTimerInterruptHandler is referenced, but not available
 void timerConfigForReceive() {
     // ESP32 has a proper API to setup timers, no weird chip macros needed
     // simply call the readable API versions :)
     // 3 timers, choose #1, 80 divider for microsecond precision @80MHz clock, count_up = true
-    if (s50usTimer == nullptr) {
-#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-        s50usTimer = timerBegin(1000000); // Only 1 parameter is required. 1000000 corresponds to 1 MHz / 1 uSec. After successful setup the timer will automatically start.
-        timerStop(s50usTimer); // Stop it here, to avoid "error E (3447) gptimer: gptimer_start(348): timer is not enabled yet" at timerEnableReceiveInterrupt()
-        timerAttachInterrupt(s50usTimer, &IRReceiveTimerInterruptHandler);
-        timerAlarm(s50usTimer, MICROS_PER_TICK, true, 0);   // 0 in the last parameter is repeat forever
-#    else
+    if(s50usTimer == NULL) {
         s50usTimer = timerBegin(1, 80, true);
         timerAttachInterrupt(s50usTimer, &IRReceiveTimerInterruptHandler, false); // false -> level interrupt, true -> edge interrupt, but this is not supported :-(
         timerAlarmWrite(s50usTimer, MICROS_PER_TICK, true);
-#    endif
     }
     // every 50 us, autoreload = true
 }
 #  endif
 
-uint8_t sLastSendPin = 0; // Avoid multiple attach() or if pin changes, detach before attach
+#  if !defined(IR_SEND_PIN)
+uint8_t sLastSendPin = 0; // To detach before attach, if already attached
+#  endif
 
 #  if defined(SEND_PWM_BY_TIMER)
 void enableSendPWMByTimer() {
-#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-#      if defined(IR_SEND_PIN)
-    ledcWrite(IR_SEND_PIN, (IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH * _IRREMOTE_ESP32_LEDC_RESOLUTION_MAX_PWM_VALUE) / 100); // 3.x API
-#      else
-    ledcWrite(IrSender.sendPin, (IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH * _IRREMOTE_ESP32_LEDC_RESOLUTION_MAX_PWM_VALUE) / 100); // 3.x API
-#      endif
+#    if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+    ledcWrite(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL, (IR_SEND_DUTY_CYCLE_PERCENT * 256) / 100); //  * 256 since we have 8 bit resolution
 #    else
-    // ESP version < 3.0
-    ledcWrite(SEND_LEDC_CHANNEL, (IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH * _IRREMOTE_ESP32_LEDC_RESOLUTION_MAX_PWM_VALUE) / 100); //  * 256 since we have 8 bit resolution
+    ledcWrite(IrSender.sendPin, (IR_SEND_DUTY_CYCLE_PERCENT * 256) / 100); // New API
 #    endif
 }
 void disableSendPWMByTimer() {
-#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
-#      if defined(IR_SEND_PIN)
-#        if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-    ledcWrite(IR_SEND_PIN, _IRREMOTE_ESP32_LEDC_RESOLUTION_MAX_PWM_VALUE); // 3.x API
-#        else
-    ledcWrite(IR_SEND_PIN, 0); // 3.x API
-#        endif
-#      else
-#        if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-    ledcWrite(IrSender.sendPin, _IRREMOTE_ESP32_LEDC_RESOLUTION_MAX_PWM_VALUE); // 3.x API
-#        else
-    ledcWrite(IrSender.sendPin, 0); // 3.x API
-#        endif
-#      endif
+#    if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+    ledcWrite(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL, 0);
 #    else
-    // ESP version < 3.0
-    ledcWrite(SEND_LEDC_CHANNEL, 0);
+    ledcWrite(IrSender.sendPin, 0); // New API
 #    endif
 }
 
@@ -1711,29 +1508,25 @@ void disableSendPWMByTimer() {
  * ledcWrite since ESP 2.0.2 does not work if pin mode is set.
  */
 void timerConfigForSend(uint16_t aFrequencyKHz) {
-#    if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+#    if ESP_ARDUINO_VERSION < ESP_ARDUINO_VERSION_VAL(3, 0, 0)
+    ledcSetup(SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL, aFrequencyKHz * 1000, 8);  // 8 bit PWM resolution
 #      if defined(IR_SEND_PIN)
-    if(sLastSendPin == 0){
-        ledcAttach(IR_SEND_PIN, aFrequencyKHz * 1000, _IRREMOTE_ESP32_LEDC_RESOLUTION); // 3.x API
-        sLastSendPin = IR_SEND_PIN;
-    }
-#      else
-    if(sLastSendPin != 0 && sLastSendPin != IrSender.sendPin){
-        ledcDetach(IrSender.sendPin); // detach pin before new attaching see #1194
-    }
-    ledcAttach(IrSender.sendPin, aFrequencyKHz * 1000, _IRREMOTE_ESP32_LEDC_RESOLUTION); // 3.x API
-    sLastSendPin = IrSender.sendPin;
-#      endif
-#    else
-    // ESP version < 3.0
-    ledcSetup(SEND_LEDC_CHANNEL, aFrequencyKHz * 1000, _IRREMOTE_ESP32_LEDC_RESOLUTION);  // 8 bit PWM resolution
-#      if defined(IR_SEND_PIN)
-    ledcAttachPin(IR_SEND_PIN, SEND_LEDC_CHANNEL);  // attach pin to channel
+    ledcAttachPin(IR_SEND_PIN, SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL);  // attach pin to channel
 #      else
     if(sLastSendPin != 0 && sLastSendPin != IrSender.sendPin){
         ledcDetachPin(IrSender.sendPin);  // detach pin before new attaching see #1194
     }
-    ledcAttachPin(IrSender.sendPin, SEND_LEDC_CHANNEL);  // attach pin to channel
+    ledcAttachPin(IrSender.sendPin, SEND_AND_RECEIVE_TIMER_LEDC_CHANNEL);  // attach pin to channel
+    sLastSendPin = IrSender.sendPin;
+#      endif
+#    else  // New API here
+#      if defined(IR_SEND_PIN)
+    ledcAttach(IR_SEND_PIN, aFrequencyKHz * 1000, 8); // New API
+#      else
+    if(sLastSendPin != 0 && sLastSendPin != IrSender.sendPin){
+        ledcDetach(IrSender.sendPin); // detach pin before new attaching see #1194
+    }
+    ledcAttach(IrSender.sendPin, aFrequencyKHz * 1000, 8); // New API
     sLastSendPin = IrSender.sendPin;
 #      endif
 #    endif
@@ -1750,13 +1543,8 @@ void timerConfigForSend(uint16_t aFrequencyKHz) {
 
 #  if !defined(IR_SAMD_TIMER)
 #    if defined(__SAMD51__)
-#      if defined(TC5)
 #define IR_SAMD_TIMER       TC5
 #define IR_SAMD_TIMER_IRQ   TC5_IRQn
-#      else
-#define IR_SAMD_TIMER       TC3
-#define IR_SAMD_TIMER_IRQ   TC3_IRQn
-#      endif
 #    else
 // SAMD21
 #define IR_SAMD_TIMER       TC3
@@ -1791,11 +1579,7 @@ void timerConfigForReceive() {
 
 #  if defined(__SAMD51__)
     // Enable the TC5 clock, use generic clock generator 0 (F_CPU) for TC5
-#    if defined(TC5_GCLK_ID)
     GCLK->PCHCTRL[TC5_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0_Val | (1 << GCLK_PCHCTRL_CHEN_Pos);
-#    else
-    GCLK->PCHCTRL[TC3_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0_Val | (1 << GCLK_PCHCTRL_CHEN_Pos);
-#    endif
 
     // The TC should be disabled before the TC is reset in order to avoid undefined behavior.
     TC->CTRLA.reg &= ~TC_CTRLA_ENABLE; // Disable the Timer
@@ -1852,12 +1636,8 @@ void timerConfigForReceive() {
 }
 
 #  if !defined(DISABLE_CODE_FOR_RECEIVER)
-#    if defined(__SAMD51__) && defined(TC5)
-void TC5_Handler(void)
-#    else
-void TC3_Handler(void)
-#    endif // defined(__SAMD51__)
-{
+#    if defined(__SAMD51__)
+void TC5_Handler(void) {
     TcCount16 *TC = (TcCount16*) IR_SAMD_TIMER;
     // Check for right interrupt bit
     if (TC->INTFLAG.bit.MC0 == 1) {
@@ -1866,6 +1646,17 @@ void TC3_Handler(void)
         IRReceiveTimerInterruptHandler();
     }
 }
+#    else
+void TC3_Handler(void) {
+    TcCount16 *TC = (TcCount16*) IR_SAMD_TIMER;
+    // Check for right interrupt bit
+    if (TC->INTFLAG.bit.MC0 == 1) {
+        // reset bit for next turn
+        TC->INTFLAG.bit.MC0 = 1;
+        IRReceiveTimerInterruptHandler();
+    }
+}
+#    endif // defined(__SAMD51__)
 #  endif // !defined(DISABLE_CODE_FOR_RECEIVER)
 
 /***************************************
@@ -1900,7 +1691,6 @@ mbed::PwmOut sPwmOutForSendPWM(digitalPinToPinName(IR_SEND_PIN));
 mbed::PwmOut sPwmOutForSendPWM(digitalPinToPinName(IrSender.sendPin));
 #    endif
 uint8_t sIROutPuseWidth;
-uint8_t sIROutPuseWidthForHigh; // for setting level to 1
 
 void enableSendPWMByTimer() {
     sPwmOutForSendPWM.pulsewidth_us(sIROutPuseWidth);
@@ -1909,11 +1699,7 @@ void enableSendPWMByTimer() {
 //void disableSendPWMByTimer() {   sPwmOutForSendPWM.suspend();} // this kills pulsewidth_us value and does not set output level to LOW
 
 void disableSendPWMByTimer() {
-#    if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-    sPwmOutForSendPWM.pulsewidth_us(sIROutPuseWidthForHigh); // this also sets output level to HIGH :-)
-#    else
     sPwmOutForSendPWM.pulsewidth_us(0); // this also sets output level to LOW :-)
-#    endif
 }
 
 /*
@@ -1921,9 +1707,8 @@ void disableSendPWMByTimer() {
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
 void timerConfigForSend(uint16_t aFrequencyKHz) {
-    sIROutPuseWidthForHigh = 1000 / aFrequencyKHz;
-    sPwmOutForSendPWM.period_us(sIROutPuseWidthForHigh);  // 26.315 for 38 kHz
-    sIROutPuseWidth = (1000 * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / (aFrequencyKHz * 100);
+    sPwmOutForSendPWM.period_us(1000 / aFrequencyKHz);  // 26.315 for 38 kHz
+    sIROutPuseWidth = (1000 * IR_SEND_DUTY_CYCLE_PERCENT) / (aFrequencyKHz * 100);
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
 
@@ -1950,7 +1735,7 @@ bool IRTimerInterruptHandlerHelper(repeating_timer_t*) {
 }
 
 void timerEnableReceiveInterrupt() {
-    add_repeating_timer_us(-(MICROS_PER_TICK), IRTimerInterruptHandlerHelper, nullptr, &s50usTimer);
+    add_repeating_timer_us(-(MICROS_PER_TICK), IRTimerInterruptHandlerHelper, NULL, &s50usTimer);
 }
 void timerDisableReceiveInterrupt() {
     cancel_repeating_timer(&s50usTimer);
@@ -1959,60 +1744,23 @@ void timerDisableReceiveInterrupt() {
 void timerConfigForReceive() {
     // no need for initializing timer at setup()
 }
-#define SEND_PWM_BY_TIMER         // Disable carrier PWM generation in software and use (restricted) hardware PWM.
 
 #  if defined(SEND_PWM_BY_TIMER)
 #include "hardware/pwm.h"
-#define USE_RP2040_NATIVE_COMMANDS
 
-#    if defined(USE_RP2040_NATIVE_COMMANDS)
 uint sSliceNumberForSendPWM;
 uint sChannelNumberForSendPWM;
 uint sIROutPuseWidth;
-uint16_t sIROutPuseWidthForHigh; // for setting level to 1
-#    else
-uint sFrequency;
-#    endif
 
 /*
  * If we just disable the PWM, the counter stops and the output stays at the state is currently has
  */
 void enableSendPWMByTimer() {
-#    if defined(USE_RP2040_NATIVE_COMMANDS)
     pwm_set_counter(sSliceNumberForSendPWM, 0);
     pwm_set_chan_level(sSliceNumberForSendPWM, sChannelNumberForSendPWM, sIROutPuseWidth);
-#    else
-    analogWriteFreq(sFrequency);
-#      if defined(IR_SEND_PIN)
-    analogWrite(IR_SEND_PIN, (uint8_t) (IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH * 255 / 100)); // Calculate duty as 0-255 value (analogWrite uses 8-bit resolution)
-#      else
-    analogWrite(IrSender.sendPin, (uint8_t) (IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH * 255 / 100)); // Calculate duty as 0-255 value (analogWrite uses 8-bit resolution)
-#      endif
-#    endif
 }
-
 void disableSendPWMByTimer() {
-#    if defined(USE_RP2040_NATIVE_COMMANDS)
-#      if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-    pwm_set_chan_level(sSliceNumberForSendPWM, sChannelNumberForSendPWM, sIROutPuseWidthForHigh); // this sets output also to HIGH
-#      else
     pwm_set_chan_level(sSliceNumberForSendPWM, sChannelNumberForSendPWM, 0); // this sets output also to LOW
-#      endif
-#    else
-#      if defined(IR_SEND_PIN)
-#        if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-    analogWrite(IR_SEND_PIN, 255); // analogWrite(0) disables PWM and sets pin HIGH
-#        else
-    analogWrite(IR_SEND_PIN, 0); // analogWrite(0) disables PWM and sets pin LOW
-#        endif
-#      else
-#        if defined(USE_ACTIVE_LOW_OUTPUT_FOR_SEND_PIN)
-    analogWrite(IrSender.sendPin, 255); // analogWrite(0) disables PWM and sets pin HIGH
-#        else
-    analogWrite(IrSender.sendPin, 0); // analogWrite(0) disables PWM and sets pin LOW
-#        endif
-#      endif
-#    endif
 }
 
 /*
@@ -2020,37 +1768,25 @@ void disableSendPWMByTimer() {
  * Set output pin mode and disable receive interrupt if it uses the same resource
  */
 void timerConfigForSend(uint16_t aFrequencyKHz) {
-#    if defined(USE_RP2040_NATIVE_COMMANDS)
-#      if defined(IR_SEND_PIN)
+#    if defined(IR_SEND_PIN)
     gpio_set_function(IR_SEND_PIN, GPIO_FUNC_PWM);
     // Find out which PWM slice is connected to IR_SEND_PIN
     sSliceNumberForSendPWM = pwm_gpio_to_slice_num(IR_SEND_PIN);
     sChannelNumberForSendPWM = pwm_gpio_to_channel(IR_SEND_PIN);
-#      else
+#    else
     gpio_set_function(IrSender.sendPin, GPIO_FUNC_PWM);
     // Find out which PWM slice is connected to IR_SEND_PIN
     sSliceNumberForSendPWM = pwm_gpio_to_slice_num(IrSender.sendPin);
     sChannelNumberForSendPWM = pwm_gpio_to_channel(IrSender.sendPin);
-#      endif
-#    else
-#      if defined(IR_SEND_PIN)
-    pinMode(IR_SEND_PIN, OUTPUT); // Set the pin to output mode initially
-#      else
-    pinMode(IrSender.sendPin, OUTPUT); // Set the pin to output mode initially
-#      endif
 #    endif
-#    if defined(USE_RP2040_NATIVE_COMMANDS)
     uint16_t tPWMWrapValue = (clock_get_hz(clk_sys)) / (aFrequencyKHz * 1000); // 3289.473 for 38 kHz @125 MHz clock. We have a 16 bit counter and use system clock (125 MHz)
+
     pwm_config tPWMConfig = pwm_get_default_config();
-    sIROutPuseWidthForHigh = tPWMWrapValue;
     pwm_config_set_wrap(&tPWMConfig, tPWMWrapValue - 1);
     pwm_init(sSliceNumberForSendPWM, &tPWMConfig, false); // we do not want to send now
-    sIROutPuseWidth = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH) / 100) - 1; // 985.84 for 38 kHz
+    sIROutPuseWidth = ((tPWMWrapValue * IR_SEND_DUTY_CYCLE_PERCENT) / 100) - 1; // 985.84 for 38 kHz
     pwm_set_chan_level(sSliceNumberForSendPWM, sChannelNumberForSendPWM, 0);
     pwm_set_enabled(sSliceNumberForSendPWM, true);
-#    else
-    sFrequency = aFrequencyKHz * 1000;
-#    endif
 }
 #  endif // defined(SEND_PWM_BY_TIMER)
 
@@ -2214,14 +1950,14 @@ void timerConfigForReceive() {
 #  if defined(SEND_PWM_BY_TIMER)
 #    if defined(IR_SEND_PIN)
 void enableSendPWMByTimer() {
-    analogWrite(IR_SEND_PIN, ((255L * 100) / IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH)), ir_out_kHz*1000);
+    analogWrite(IR_SEND_PIN, ((256L * 100) / IR_SEND_DUTY_CYCLE_PERCENT)), ir_out_kHz*1000);
 }
 void disableSendPWMByTimer() {
     analogWrite(IR_SEND_PIN, 0, ir_out_kHz*1000);
 }
 #    else
 void enableSendPWMByTimer() {
-    analogWrite(IrSender.sendPin, ((255L * 100) / IR_SEND_DUTY_CYCLE_PERCENT_FOR_LEVEL_HIGH), ir_out_kHz * 1000);
+    analogWrite(IrSender.sendPin, ((256L * 100) / IR_SEND_DUTY_CYCLE_PERCENT), ir_out_kHz * 1000);
 }
 void disableSendPWMByTimer() {
     analogWrite(IrSender.sendPin, 0, ir_out_kHz * 1000);

@@ -33,7 +33,7 @@
 #ifndef _IR_PROTOCOL_HPP
 #define _IR_PROTOCOL_HPP
 
-#if defined(DEBUG)
+#if defined(DEBUG) && !defined(LOCAL_DEBUG)
 #define LOCAL_DEBUG
 #else
 //#define LOCAL_DEBUG // This enables debug output only for this file
@@ -62,7 +62,6 @@ const char string_Kaseikyo_JVC[] PROGMEM = "Kaseikyo_JVC";
 const char string_Kaseikyo_Mitsubishi[] PROGMEM = "Kaseikyo_Mitsubishi";
 const char string_RC5[] PROGMEM = "RC5";
 const char string_RC6[] PROGMEM = "RC6";
-const char string_RC6A[] PROGMEM = "RC6A";
 const char string_Samsung[] PROGMEM = "Samsung";
 const char string_SamsungLG[] PROGMEM = "SamsungLG";
 const char string_Samsung48[] PROGMEM = "Samsung48";
@@ -81,8 +80,8 @@ const char string_FAST[] PROGMEM = "FAST";
 const char *const ProtocolNames[]
 PROGMEM = { string_Unknown, string_PulseWidth, string_PulseDistance, string_Apple, string_Denon, string_JVC, string_LG, string_LG2,
         string_NEC, string_NEC2, string_Onkyo, string_Panasonic, string_Kaseikyo, string_Kaseikyo_Denon, string_Kaseikyo_Sharp,
-        string_Kaseikyo_JVC, string_Kaseikyo_Mitsubishi, string_RC5, string_RC6, string_RC6A, string_Samsung, string_SamsungLG,
-        string_Samsung48, string_Sharp, string_Sony
+        string_Kaseikyo_JVC, string_Kaseikyo_Mitsubishi, string_RC5, string_RC6, string_Samsung, string_SamsungLG, string_Samsung48,
+        string_Sharp, string_Sony
 #if !defined(EXCLUDE_EXOTIC_PROTOCOLS)
         , string_BangOlufsen, string_BoseWave, string_Lego, string_MagiQuest, string_Whynter, string_FAST
 #endif
@@ -150,10 +149,6 @@ namespace PrintULL {
 #  endif
 #endif
 
-/** @}
- * \addtogroup Print Print functions
- * @{
- */
 /**
  * Function to print decoded result and flags in one line.
  * A static function to be able to print data to send or copied received data.
@@ -165,10 +160,6 @@ namespace PrintULL {
  *
  */
 void printIRResultShort(Print *aSerial, IRData *aIRDataPtr, bool aPrintRepeatGap) {
-    (void) aPrintRepeatGap;
-    printIRResultShort(aSerial, aIRDataPtr);
-}
-void printIRResultShort(Print *aSerial, IRData *aIRDataPtr) {
     if (aIRDataPtr->flags & IRDATA_FLAGS_WAS_OVERFLOW) {
         aSerial->println(F("Overflow"));
         return;
@@ -218,6 +209,22 @@ void printIRResultShort(Print *aSerial, IRData *aIRDataPtr) {
 #if defined(DECODE_DISTANCE_WIDTH)
         }
 #endif
+        if (aIRDataPtr->flags & (IRDATA_FLAGS_IS_AUTO_REPEAT | IRDATA_FLAGS_IS_REPEAT)) {
+            aSerial->print(' ');
+            if (aIRDataPtr->flags & IRDATA_FLAGS_IS_AUTO_REPEAT) {
+                aSerial->print(F("Auto-"));
+            }
+            aSerial->print(F("Repeat"));
+#if !defined(DISABLE_CODE_FOR_RECEIVER)
+            if (aPrintRepeatGap) {
+                aSerial->print(F(" gap="));
+                aSerial->print((uint32_t) aIRDataPtr->initialGap * MICROS_PER_TICK);
+                aSerial->print(F("us"));
+            }
+#else
+            (void)aPrintRepeatGap;
+#endif
+        }
 
         /*
          * Print raw data
@@ -237,44 +244,17 @@ void printIRResultShort(Print *aSerial, IRData *aIRDataPtr) {
             aSerial->print(F(" bits"));
 
             if (aIRDataPtr->flags & IRDATA_FLAGS_IS_MSB_FIRST) {
-                aSerial->print(F(" MSB first"));
+                aSerial->println(F(" MSB first"));
             } else {
-                aSerial->print(F(" LSB first"));
+                aSerial->println(F(" LSB first"));
             }
-        }
 
-        /*
-         * Print gap and duration, in order to be able to compute the repeat period of the protocol by adding the next gap time
-         */
-        if (aIRDataPtr->flags & (IRDATA_FLAGS_IS_AUTO_REPEAT | IRDATA_FLAGS_IS_REPEAT)) {
-            aSerial->print(' ');
-            if (aIRDataPtr->flags & IRDATA_FLAGS_IS_AUTO_REPEAT) {
-                aSerial->print(F("Auto-"));
-            }
-            aSerial->print(F("Repeat"));
+        } else {
+            aSerial->println();
         }
-#if !defined(DISABLE_CODE_FOR_RECEIVER)
-        aSerial->print(F(" Gap="));
-        aSerial->print((uint32_t) aIRDataPtr->initialGapTicks * MICROS_PER_TICK);
-        aSerial->print(F("us"));
-
-        uint16_t tSumOfDurationTicks = 0;
-        for (IRRawlenType i = 1; i < aIRDataPtr->rawlen; i++) {
-            tSumOfDurationTicks += aIRDataPtr->rawDataPtr->rawbuf[i];
-        }
-        aSerial->print(F(" Duration="));
-        aSerial->print((uint32_t) tSumOfDurationTicks * MICROS_PER_TICK, DEC);
-        aSerial->println(F("us"));
-#else
-        aSerial->println();
-#endif
     }
 }
 
-/** @}
- * \addtogroup Utils Utility functions
- * @{
- */
 /**********************************************************************************************************************
  * Function to bit reverse OLD MSB values of e.g. NEC.
  **********************************************************************************************************************/
