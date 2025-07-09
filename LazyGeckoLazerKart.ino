@@ -14,7 +14,7 @@
 
 
 //    SELECT "ESP32 DEV MODULE" AS THE BOARD
-#define VERSION_STR "!7.03.2025-d2.0-DEMO"
+#define VERSION_STR "!7.03.2025-d2.1-DEMO"
 
 
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols
@@ -646,7 +646,22 @@ void LaserGun_JesusLED_Sequence(int _time){
     pulseYellow(1);
   }
 }
+void registerDamage(int8_t _damage){
+    String topic = "device/"+mqttClientId+"/damage";
+    String payload = "{";
 
+    payload+= "\"mac\":\""+String(macStr)+"\",";
+    payload+= "\"type\":\""+String(DEVICE_TYPE)+"\",";
+    payload+= "\"damage\":\""+String(_damage)+"\",";
+    payload+= "\"health\":\""+String(CAR_HEALTH)+"\"";
+    payload+= "}";
+
+    Serial.print("Publishing ...");
+    Serial.println(payload);
+
+
+    client.publish(topic.c_str(), payload.c_str());
+}
 void LaserGun_KillCar(){
   
   Serial.print("DISABLING CAR FOR ");
@@ -672,11 +687,14 @@ void LaserGun_ReviveCar(){
   HEALTH_BAR_JESUS_UPDATE();
   delay(JESUS_MS);  
   */
+  registerDamage(-MAX_LIFE);
   LaserGun_JesusLED_Sequence(JESUS_MS);
   
   HEALTH_BAR_UPDATE();
   Serial.println("DAMAGE REENABLED... LOOKING FOR SHOTS");
 }
+
+
 
 int LaserGun_CarShot(int8_t _damage){
   CAR_HEALTH -= _damage;
@@ -688,7 +706,9 @@ int LaserGun_CarShot(int8_t _damage){
   Serial.println(CAR_HEALTH);
   
   HEALTH_BAR_UPDATE();
-  
+
+  registerDamage(_damage);
+
   if(CAR_HEALTH <= 0){
     LaserGun_KillCar();
   }
