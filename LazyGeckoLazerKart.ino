@@ -14,7 +14,7 @@
 
 
 //    SELECT "ESP32 DEV MODULE" AS THE BOARD
-#define VERSION_STR "!7.03.2025-d2.1-DEMO"
+#define VERSION_STR "!7.09.2025-d2.5-DEMO"
 
 
 #define DECODE_DISTANCE_WIDTH // Universal decoder for pulse distance width protocols
@@ -64,7 +64,7 @@ String getHostName() {
 ///I want SSID to build off of the MAC addr of the device
 //Handled lower
 //const char *ssid = "LG:TG:XX:XX:XX:XX:XX";
-const char *password = "boutablast";
+//const char *password = "boutablast";
 bool isUpdating = false;
 
 
@@ -790,29 +790,62 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 TaskHandle_t wifiTaskHandle = NULL;
+bool wifi_enabled = false;
+
 
 void WiFiTask(void * parameter) {
- // Setup WiFi for OTA in Station Mode (connect to router)
-    WiFi.mode(WIFI_STA);
-    WiFi.begin("LG-Router", "supermansucks");
 
-    Serial.println("Connecting to LG-Router...");
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
+  const char* ssid = "LG-Router";
+  const char* password = "supermansucks";
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+    uint32_t jitter_ms = esp_random() % 5000;  // up to 5000 ms
+    uint32_t total_delay = 5000;
+  while (true) {
+    if (WiFi.status() != WL_CONNECTED) {
+      wifi_enabled = false;
+      Serial.println("WiFi disconnected. Attempting reconnect...");
+      WiFi.disconnect();
+      WiFi.begin(ssid, password);
+
+      int retries = 0;
+      while (WiFi.status() != WL_CONNECTED && retries < 20) { // 10 seconds max
+        delay(500);
+        Serial.print(".");
+        retries++;
+      }
+    
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("");
+        Serial.println("WiFi connected.");
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());
+
+        // Build hostname and start mDNS
+        String hostname = getHostName();
+        mqttClientId = String(macStr);
+        mqttClientId.replace("-", "");  // Remove colons for compatibility
+
+        Serial.print("Hostname: ");
+        Serial.println(hostname);
+        
+        wifi_enabled = true;
+
+        //Wait to do this
+        client.setServer(mqtt_server, mqtt_port);
+        client.setCallback(mqttCallback);  // Optional: if you want to handle messages
+      }else {
+          Serial.println("\nFailed to reconnect to WiFi.");    
+          jitter_ms = esp_random() % 5000;  // up to 5000 ms
+          total_delay = 5000 + jitter_ms;
+          Serial.print("\nRetry in....");
+          Serial.println(total_delay);
+      }
     }
-    Serial.println("");
-    Serial.println("WiFi connected.");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-
-    // Build hostname and start mDNS
-    String hostname = getHostName();
-    mqttClientId = String(macStr);
-    mqttClientId.replace("-", "");  // Remove colons for compatibility
-
-    Serial.print("Hostname: ");
-    Serial.println(hostname);
+        // Base delay: 5 sec, add jitter: 0–5 sec
+    vTaskDelay(total_delay / portTICK_PERIOD_MS);
+  }
 
   // Delete this task after WiFi connects
   vTaskDelete(NULL);
@@ -909,9 +942,6 @@ void setup() {
     server.on("/status", HTTP_GET, handleStatus);
     
     server.begin();
-
-    client.setServer(mqtt_server, mqtt_port);
-    client.setCallback(mqttCallback);  // Optional: if you want to handle messages
 
     Serial.println("Web server started");
     // Start server handling on Core 0
