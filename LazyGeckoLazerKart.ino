@@ -21,7 +21,6 @@
 #include <Arduino.h>
 #include <LazyGeckoLazerKart.h>
 #include <LGdevice_type.h>
-#include <LGdevice_type.h>
 
 //OTA=========================
 #include <WiFi.h>
@@ -30,6 +29,7 @@
 #include <ESPmDNS.h>
 #include <NetworkUdp.h>
 #include <Update.h>
+#include <HTTPClient.h>
 //OTA=========================
 
 const byte DNS_PORT = 53;
@@ -40,15 +40,25 @@ TaskHandle_t serverTaskHandle;
 
 IPAddress apIP(192, 168, 4, 1);
 
+String mqttClientId = "";
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+  char macStr[18];
 String getHostName() {
   //iF WE WANT UNIQUE CAUSE EVERYONE IS ON THE SAME NETWROK
- /* uint8_t mac[6];
-  WiFi.softAPmacAddress(mac);
-  char macStr[18];
-  snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+ /**/ 
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+ // char macStr[18];
+  snprintf(macStr, sizeof(macStr), "%02x-%02x-%02x-%02x-%02x-%02x",
            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-  return "LG:TG:" + String(macStr) +".local";*/
-  return "lg-tag.local";
+
+
+
+
+  return "LG:TG:" + String(macStr) +".local";
 }
 
 ///I want SSID to build off of the MAC addr of the device
@@ -56,6 +66,53 @@ String getHostName() {
 //const char *ssid = "LG:TG:XX:XX:XX:XX:XX";
 const char *password = "boutablast";
 bool isUpdating = false;
+
+
+void performOTAUpdate(const char* url) {
+  Serial.printf("Starting OTA update from URL: %s\n", url);
+
+  HTTPClient http;
+  http.begin(url);
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    int contentLength = http.getSize();
+    WiFiClient* stream = http.getStreamPtr();
+
+    if (!Update.begin(contentLength)) { // Start update with max available size
+      Serial.println("Not enough space to start OTA");
+      http.end();
+      return;
+    }
+
+    Serial.println("Begin OTA update...");
+
+    size_t written = Update.writeStream(*stream);
+
+    if (written == contentLength) {
+      Serial.printf("Written %u bytes successfully\n", written);
+    } else {
+      Serial.printf("Written only %u/%u bytes. Update failed!\n", written, contentLength);
+      http.end();
+      return;
+    }
+
+    if (Update.end()) {
+      if (Update.isFinished()) {
+        Serial.println("OTA update finished successfully. Rebooting...");
+        ESP.restart();
+      } else {
+        Serial.println("Update not finished? Something went wrong.");
+      }
+    } else {
+      Serial.printf("Update failed. Error #: %u\n", Update.getError());
+    }
+  } else {
+    Serial.printf("Failed to download firmware. HTTP code: %d\n", httpCode);
+  }
+
+  http.end();
+}
 
 
 void handleRoot() {
@@ -335,7 +392,7 @@ String html = R"rawliteral(
 
 
 html.replace("%VERSION_STR%", VERSION_STR);
-html.replace("%MAC_ADDR_STR%", String(WiFi.softAPmacAddress()));
+html.replace("%MAC_ADDR_STR%", String(WiFi.macAddress()));
 
 
 
@@ -346,12 +403,51 @@ server.send(200, "text/html", html);
   }
 }
 
+void registerMsg(){
+    String topic = "device/"+mqttClientId+"/register";
+    String payload = "{";
+
+    payload+= "\"mac\":\""+String(macStr)+"\",";
+    payload+= "\"firmware\":\""+String(VERSION_STR)+"\",";
+    payload+= "\"type\":\""+String(DEVICE_TYPE)+"\"";
+    payload+= "}";
+
+
+    client.publish(topic.c_str(), payload.c_str());
+}
+void reconnectMQTT() {
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    Serial.print("lgdev");
+    Serial.print("..........");
+    if (client.connect("lgdev")) {
+      Serial.println("Connected as  lgdev");
+      client.subscribe("lg-car/commands");  
+      client.subscribe(String("device/"+mqttClientId+"/ota").c_str());
+      registerMsg();
+
+
+    } else {
+      Serial.print("Failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" retrying in 5s...");
+      delay(5000);
+    }
+  }
+}
+
 
 
 // Task to handle HTTP requests on Core 0
 void serverTask(void *parameter) {
   while (true) {
-    dnsServer.processNextRequest();                       //NEW
+    //dnsServer.processNextRequest();                       //NEW
+
+    if (!client.connected()) {
+      reconnectMQTT();
+    }
+    client.loop();
+
     server.handleClient();
     vTaskDelay(1); // prevent WDT reset
   }
@@ -633,7 +729,45 @@ void LaserGun_CheckMessage(int _data){
   HEALTH_BAR_UPDATE();
 }
 
+String getOtaUrl(const String& json) {
+  const String key = "\"otaurl\":\"";
+  int start = json.indexOf(key);
+  if (start == -1) return "";  // not found
 
+  start += key.length();
+  int end = json.indexOf("\"", start);
+  if (end == -1) return "";    // no closing quote found
+
+  return json.substring(start, end);
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Convert topic to String for easy handling
+  String topicStr = String(topic);
+
+  // Print topic for debugging
+  Serial.print("Topic: ");
+  Serial.println(topicStr);
+
+  // Check if topic ends with "/ota"
+  if (topicStr.endsWith("/ota")) {
+    // Convert payload to string
+    String message;
+    for (unsigned int i = 0; i < length; i++) {
+      message += (char)payload[i];
+    }
+
+
+    String url = getOtaUrl(message);
+
+    // Print the OTA URL
+    Serial.print("OTA URL received: ");
+    Serial.println(url);
+    performOTAUpdate(url.c_str());
+    //Pass this to the update module?
+
+  }
+}
 
 
 
@@ -706,37 +840,31 @@ void setup() {
     digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
     LaserGun_ReviveCar();
     
-    //Setup Wifi for OTA in AP Mode
-    WiFi.mode(WIFI_AP);                  // Important!
-    WiFi.softAP("t", "123");     // Start AP
-    // Get the MAC address and format it
-    String mac = WiFi.softAPmacAddress();
-    Serial.print("MACADDR: ");
-    Serial.println(mac);
+    // Setup WiFi for OTA in Station Mode (connect to router)
+    WiFi.mode(WIFI_STA);
+    WiFi.begin("LG-Router", "supermansucks");
 
-    String ssid = "LG:TG:" + mac;
-
-    Serial.print("SSID Set to : ");
-    Serial.println(ssid);
-
-    WiFi.softAP(ssid.c_str(), password);
-    WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-
-    Serial.print("AP IP address: ");
-    Serial.println(WiFi.softAPIP()); //Is this constant?
+    Serial.println("Connecting to LG-Router...");
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("WiFi connected.");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
 
     // Build hostname and start mDNS
     String hostname = getHostName();
+    mqttClientId = String(macStr);
+    mqttClientId.replace("-", "");  // Remove colons for compatibility
+
     Serial.print("Hostname: ");
     Serial.println(hostname);
 
-    if (!MDNS.begin(hostname.c_str())) {
-      Serial.println("Error setting up MDNS responder!");
-    } else {
-      Serial.println("mDNS responder started");
-    }
 
-    dnsServer.start(DNS_PORT, "*", apIP);  // catch-all DNS
+
+   // dnsServer.start(DNS_PORT, "*", apIP);  // catch-all DNS
 
     // Start Web Server
      // Route and OTA upload handler
@@ -746,6 +874,9 @@ void setup() {
     server.on("/status", HTTP_GET, handleStatus);
     
     server.begin();
+
+    client.setServer(mqtt_server, mqtt_port);
+    client.setCallback(mqttCallback);  // Optional: if you want to handle messages
 
     Serial.println("Web server started");
     // Start server handling on Core 0
@@ -782,7 +913,7 @@ void setup() {
 #endif
    // LaserGun_KillLED_Sequence(DEATH_MS);
    
-    
+
 }
 
 void handleStatus() {
@@ -845,7 +976,7 @@ String html = R"rawliteral(
   <ul>
 )rawliteral";
 
-html += "<li>MAC: " + String(WiFi.softAPmacAddress()) + "</li>";
+html += "<li>MAC: " + String(WiFi.macAddress()) + "</li>";
 html += "<li>VERSION_STR: " + String(VERSION_STR) + "</li>";
 html += "<li>TYPE_OF_TARTGET_STR: " + String(TYPE_OF_TARTGET_STR) + "</li>";
 html += "<li>OFF_BY_DEFAULT: " + String(default_output) + "</li>";
