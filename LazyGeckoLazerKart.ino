@@ -789,7 +789,34 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
+TaskHandle_t wifiTaskHandle = NULL;
 
+void WiFiTask(void * parameter) {
+ // Setup WiFi for OTA in Station Mode (connect to router)
+    WiFi.mode(WIFI_STA);
+    WiFi.begin("LG-Router", "supermansucks");
+
+    Serial.println("Connecting to LG-Router...");
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("");
+    Serial.println("WiFi connected.");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+
+    // Build hostname and start mDNS
+    String hostname = getHostName();
+    mqttClientId = String(macStr);
+    mqttClientId.replace("-", "");  // Remove colons for compatibility
+
+    Serial.print("Hostname: ");
+    Serial.println(hostname);
+
+  // Delete this task after WiFi connects
+  vTaskDelete(NULL);
+}
 
 void setup() {
 
@@ -860,29 +887,17 @@ void setup() {
     digitalWrite(LG_CAR_LED_IR_RX_ST, LOW);
     LaserGun_ReviveCar();
     
-    // Setup WiFi for OTA in Station Mode (connect to router)
-    WiFi.mode(WIFI_STA);
-    WiFi.begin("LG-Router", "supermansucks");
-
-    Serial.println("Connecting to LG-Router...");
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
-    }
-    Serial.println("");
-    Serial.println("WiFi connected.");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-
-    // Build hostname and start mDNS
-    String hostname = getHostName();
-    mqttClientId = String(macStr);
-    mqttClientId.replace("-", "");  // Remove colons for compatibility
-
-    Serial.print("Hostname: ");
-    Serial.println(hostname);
-
-
+   
+    // Start WiFi connection task (non-blocking)
+      xTaskCreatePinnedToCore(
+        WiFiTask,
+        "WiFiTask",
+        4096,
+        NULL,
+        1,
+        &wifiTaskHandle,
+        1 // Run on core 1 for example
+      );
 
    // dnsServer.start(DNS_PORT, "*", apIP);  // catch-all DNS
 
