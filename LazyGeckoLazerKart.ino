@@ -415,15 +415,30 @@ void registerMsg(){
 
     client.publish(topic.c_str(), payload.c_str());
 }
+
+void setupMQTTSubscriptions() {
+  Serial.println("Setting up MQTT subscriptions...");
+  
+  client.subscribe("lg-car/commands");  
+  client.subscribe(String("device/"+mqttClientId+"/ota").c_str());
+  client.subscribe(String("batch/" + String(DEVICE_TYPE) + "/ota").c_str());
+  client.subscribe("batch/all/ota");
+
+  Serial.println("MQTT subscriptions complete");
+}
+
 void reconnectMQTT() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
-    Serial.print("lgdev");
+    Serial.print(mqttClientId);
     Serial.print("..........");
-    if (client.connect("lgdev")) {
-      Serial.println("Connected as  lgdev");
-      client.subscribe("lg-car/commands");  
-      client.subscribe(String("device/"+mqttClientId+"/ota").c_str());
+    if (client.connect(mqttClientId.c_str())) {
+      Serial.print("Connected as ");
+      Serial.println(mqttClientId);
+      
+      // Set up multiple MQTT subscriptions for flexible update targeting
+      setupMQTTSubscriptions();
+      
       registerMsg();
 
 
@@ -783,6 +798,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     // Print the OTA URL
     Serial.print("OTA URL received: ");
     Serial.println(url);
+    
+    // Add random delay for batch updates to prevent network congestion
+    if (topicStr.startsWith("batch/")) {
+      uint32_t delay_ms = esp_random() % 30000;  // 0-30 second delay
+      Serial.print("Batch update detected, delaying: ");
+      Serial.print(delay_ms);
+      Serial.println(" ms");
+      vTaskDelay(delay_ms/portTICK_PERIOD_MS);
+
+    }
+    
     performOTAUpdate(url.c_str());
     //Pass this to the update module?
 
